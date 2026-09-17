@@ -1,0 +1,7 @@
+{
+  "name": "takasago-jhs-komu-ai-assist-api",
+  "private": true,
+  "type": "module",
+  "scripts": {"check":"node --check worker.mjs","test":"node test.mjs","deploy":"wrangler deploy"},
+  "devDependencies": {"wrangler":"^4.0.0"}
+}
