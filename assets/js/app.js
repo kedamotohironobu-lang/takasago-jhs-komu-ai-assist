@@ -33,6 +33,14 @@
   };
 
   if (nodes.year) nodes.year.textContent = new Date().getFullYear();
+
+  const stageStrong = document.querySelector('.stage-card strong');
+  const stageText = document.querySelector('.stage-card p');
+  const footerStage = document.querySelector('.site-footer p');
+  if (stageStrong) stageStrong.textContent = '現在：STEP 3 接続基盤実装済み';
+  if (stageText) stageText.textContent = 'Cloudflare Workers経由のAI接続コードを実装済みです。Worker URLとAPIキーの設定後に、本番AI通信へ切り替わります。';
+  if (footerStage) footerStage.textContent = '高砂市立高砂中学校　校務AIアシスト — STEP 3 接続準備版';
+
   const tool = (id) => TOOLS[id] || TOOLS.parent;
 
   function showToast(message, ms=2800) {
