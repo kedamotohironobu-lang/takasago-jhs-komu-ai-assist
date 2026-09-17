@@ -1,0 +1,5 @@
+{
+  "workerBaseUrl": "",
+  "allowDemoFallback": true,
+  "requestTimeoutMs": 65000
+}
