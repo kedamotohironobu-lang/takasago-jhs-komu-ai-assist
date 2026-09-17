@@ -21,7 +21,12 @@
         </div>
 
         <div class="hero-visual">
-          <div class="hero-overlay" aria-hidden="true"></div>
+          <img
+            class="hero-photo"
+            src="assets/images/hero-school-photo-1800x600.jpg"
+            alt="青空と緑に囲まれた学校校舎"
+          >
+          <div class="hero-shade" aria-hidden="true"></div>
           <div class="hero-content">
             <div class="hero-glass">
               <h1 id="home-title" class="hero-title">校務AIアシスト</h1>
@@ -31,16 +36,65 @@
         </div>
 
         <div class="tool-grid" id="tool-grid" aria-label="校務AIメニュー">
-          <button class="tool-card c1" type="button" data-tool-id="document"><div class="tool-icon" aria-hidden="true">📝</div><div class="tool-name">校務文書作成</div><div class="tool-desc">案内文・通知文・依頼文</div></button>
-          <button class="tool-card c2" type="button" data-tool-id="check"><div class="tool-icon" aria-hidden="true">✅</div><div class="tool-name">文書チェック</div><div class="tool-desc">誤字・表記揺れ・修正案</div></button>
-          <button class="tool-card c3" type="button" data-tool-id="parent"><div class="tool-icon" aria-hidden="true">📢</div><div class="tool-name">保護者連絡文</div><div class="tool-desc">丁寧で分かりやすい文章</div></button>
-          <button class="tool-card c4" type="button" data-tool-id="newsletter"><div class="tool-icon" aria-hidden="true">🏫</div><div class="tool-name">学年通信支援</div><div class="tool-desc">学年通信・おたより</div></button>
-          <button class="tool-card c5" type="button" data-tool-id="meeting"><div class="tool-icon" aria-hidden="true">📋</div><div class="tool-name">会議メモ整理</div><div class="tool-desc">決定事項・課題・担当</div></button>
-          <button class="tool-card c6" type="button" data-tool-id="lesson"><div class="tool-icon" aria-hidden="true">📚</div><div class="tool-name">授業アイデア</div><div class="tool-desc">授業展開・発問案</div></button>
-          <button class="tool-card c7" type="button" data-tool-id="research"><div class="tool-icon" aria-hidden="true">🎓</div><div class="tool-name">研修・研究支援</div><div class="tool-desc">協議事項・研究案</div></button>
-          <button class="tool-card c8" type="button" data-tool-id="mail"><div class="tool-icon" aria-hidden="true">✉️</div><div class="tool-name">メール作成</div><div class="tool-desc">校務向けメール文</div></button>
-          <button class="tool-card c9" type="button" data-tool-id="rewrite"><div class="tool-icon" aria-hidden="true">🔄</div><div class="tool-name">言い換え</div><div class="tool-desc">丁寧・簡潔・保護者向け</div></button>
-          <button class="tool-card c10" type="button" data-tool-id="faq"><div class="tool-icon" aria-hidden="true">❓</div><div class="tool-name">校内FAQ</div><div class="tool-desc">校内ルールから回答</div></button>
+          <button class="tool-card c1" type="button" data-tool-id="document">
+            <div class="tool-icon" aria-hidden="true">📝</div>
+            <div class="tool-name">校務文書作成</div>
+            <div class="tool-desc">案内文・通知文・依頼文</div>
+          </button>
+
+          <button class="tool-card c2" type="button" data-tool-id="check">
+            <div class="tool-icon" aria-hidden="true">✅</div>
+            <div class="tool-name">文書チェック</div>
+            <div class="tool-desc">誤字・表記揺れ・修正案</div>
+          </button>
+
+          <button class="tool-card c3" type="button" data-tool-id="parent">
+            <div class="tool-icon" aria-hidden="true">📢</div>
+            <div class="tool-name">保護者連絡文</div>
+            <div class="tool-desc">丁寧で分かりやすい文章</div>
+          </button>
+
+          <button class="tool-card c4" type="button" data-tool-id="newsletter">
+            <div class="tool-icon" aria-hidden="true">🏫</div>
+            <div class="tool-name">学年通信支援</div>
+            <div class="tool-desc">学年通信・おたより</div>
+          </button>
+
+          <button class="tool-card c5" type="button" data-tool-id="meeting">
+            <div class="tool-icon" aria-hidden="true">📋</div>
+            <div class="tool-name">会議メモ整理</div>
+            <div class="tool-desc">決定事項・課題・担当</div>
+          </button>
+
+          <button class="tool-card c6" type="button" data-tool-id="lesson">
+            <div class="tool-icon" aria-hidden="true">📚</div>
+            <div class="tool-name">授業アイデア</div>
+            <div class="tool-desc">授業展開・発問案</div>
+          </button>
+
+          <button class="tool-card c7" type="button" data-tool-id="research">
+            <div class="tool-icon" aria-hidden="true">🎓</div>
+            <div class="tool-name">研修・研究支援</div>
+            <div class="tool-desc">協議事項・研究案</div>
+          </button>
+
+          <button class="tool-card c8" type="button" data-tool-id="mail">
+            <div class="tool-icon" aria-hidden="true">✉️</div>
+            <div class="tool-name">メール作成</div>
+            <div class="tool-desc">校務向けメール文</div>
+          </button>
+
+          <button class="tool-card c9" type="button" data-tool-id="rewrite">
+            <div class="tool-icon" aria-hidden="true">🔄</div>
+            <div class="tool-name">言い換え</div>
+            <div class="tool-desc">丁寧・簡潔・保護者向け</div>
+          </button>
+
+          <button class="tool-card c10" type="button" data-tool-id="faq">
+            <div class="tool-icon" aria-hidden="true">❓</div>
+            <div class="tool-name">校内FAQ</div>
+            <div class="tool-desc">校内ルールから回答</div>
+          </button>
 
           <div class="future-card" aria-hidden="true">
             <div class="future-mark">🌳</div>
@@ -56,18 +110,51 @@
           <button class="back-link" type="button" data-back-home>← ホームへ戻る</button>
           <div class="mini-tool-list" id="mini-tool-list"></div>
         </aside>
+
         <div class="editor-main">
           <div class="editor-progress" aria-label="入力から完成までの流れ">
-            <div class="progress-step is-current"><span>1</span><strong>内容を入力</strong></div><div class="progress-arrow">›</div><div class="progress-step"><span>2</span><strong>生成する</strong></div><div class="progress-arrow">›</div><div class="progress-step is-muted"><span>3</span><strong>完成</strong></div>
+            <div class="progress-step is-current"><span>1</span><strong>内容を入力</strong></div>
+            <div class="progress-arrow">›</div>
+            <div class="progress-step"><span>2</span><strong>生成する</strong></div>
+            <div class="progress-arrow">›</div>
+            <div class="progress-step is-muted"><span>3</span><strong>完成</strong></div>
           </div>
+
           <section class="editor-card">
-            <div class="editor-heading"><div class="editor-icon" id="editor-icon" aria-hidden="true">📢</div><div><h2 id="editor-title" class="editor-title">保護者連絡文</h2><p class="editor-lead" id="editor-lead">保護者への連絡を、丁寧で分かりやすい文章にします。</p></div></div>
-            <form id="editor-form" class="editor-form">
-              <label class="field-block"><span class="field-label" id="input-label">連絡内容（箇条書きでもOK）</span><textarea id="main-input" rows="9" placeholder="ここに内容を入力してください" required></textarea></label>
-              <div class="field-grid" id="option-area">
-                <label class="field-block compact"><span class="field-label">文章の長さ</span><select id="length-select"><option value="短め">短め</option><option value="標準" selected>標準</option><option value="詳しく">詳しく</option></select></label>
-                <label class="field-block compact"><span class="field-label">文章の雰囲気</span><select id="tone-select"><option value="丁寧" selected>丁寧</option><option value="やわらかい">やわらかい</option><option value="公文書調">公文書調</option></select></label>
+            <div class="editor-heading">
+              <div class="editor-icon" id="editor-icon" aria-hidden="true">📢</div>
+              <div>
+                <h2 id="editor-title" class="editor-title">保護者連絡文</h2>
+                <p class="editor-lead" id="editor-lead">保護者への連絡を、丁寧で分かりやすい文章にします。</p>
               </div>
+            </div>
+
+            <form id="editor-form" class="editor-form">
+              <label class="field-block">
+                <span class="field-label" id="input-label">連絡内容（箇条書きでもOK）</span>
+                <textarea id="main-input" rows="9" placeholder="ここに内容を入力してください" required></textarea>
+              </label>
+
+              <div class="field-grid" id="option-area">
+                <label class="field-block compact">
+                  <span class="field-label">文章の長さ</span>
+                  <select id="length-select">
+                    <option value="短め">短め</option>
+                    <option value="標準" selected>標準</option>
+                    <option value="詳しく">詳しく</option>
+                  </select>
+                </label>
+
+                <label class="field-block compact">
+                  <span class="field-label">文章の雰囲気</span>
+                  <select id="tone-select">
+                    <option value="丁寧" selected>丁寧</option>
+                    <option value="やわらかい">やわらかい</option>
+                    <option value="公文書調">公文書調</option>
+                  </select>
+                </label>
+              </div>
+
               <button class="primary-action" type="submit">✨ AIで作成する</button>
             </form>
           </section>
@@ -78,12 +165,36 @@
     <section class="screen screen-result" id="screen-result" aria-labelledby="result-title" hidden>
       <div class="result-layout">
         <div class="result-main">
-          <div class="result-head"><div><p class="result-ok">✅ 文章が完成しました！</p><h2 id="result-title" class="result-title">完成文章</h2></div><div class="result-head-actions"><button class="mini-button" type="button" data-copy-result>📋 コピー</button><button class="mini-button" type="button" data-back-editor>✏️ 編集に戻る</button></div></div>
-          <article class="result-card"><pre id="result-output" class="result-output"></pre></article>
+          <div class="result-head">
+            <div>
+              <p class="result-ok">✅ 文章が完成しました！</p>
+              <h2 id="result-title" class="result-title">完成文章</h2>
+            </div>
+            <div class="result-head-actions">
+              <button class="mini-button" type="button" data-copy-result>📋 コピー</button>
+              <button class="mini-button" type="button" data-back-editor>✏️ 編集に戻る</button>
+            </div>
+          </div>
+
+          <article class="result-card">
+            <pre id="result-output" class="result-output"></pre>
+          </article>
         </div>
+
         <aside class="result-side">
-          <div class="side-card"><h3>かんたん調整</h3><button class="ghost-button" type="button" data-quick-edit="shorter">もう少し短く</button><button class="ghost-button" type="button" data-quick-edit="casual">もっとやわらかく</button><button class="ghost-button" type="button" data-quick-edit="formal">より正式にする</button><button class="ghost-button" type="button" data-quick-edit="retry">別の表現で作る</button></div>
-          <div class="side-card tip-card"><h3>ワンポイント</h3><p id="result-tip">必要事項を先に箇条書きで書くと、文章を整理しやすくなります。</p></div>
+          <div class="side-card">
+            <h3>かんたん調整</h3>
+            <button class="ghost-button" type="button" data-quick-edit="shorter">もう少し短く</button>
+            <button class="ghost-button" type="button" data-quick-edit="casual">もっとやわらかく</button>
+            <button class="ghost-button" type="button" data-quick-edit="formal">より正式にする</button>
+            <button class="ghost-button" type="button" data-quick-edit="retry">別の表現で作る</button>
+          </div>
+
+          <div class="side-card tip-card">
+            <h3>ワンポイント</h3>
+            <p id="result-tip">必要事項を先に箇条書きで書くと、文章を整理しやすくなります。</p>
+          </div>
+
           <button class="back-home-action" type="button" data-home-from-result>← ホームへ戻る</button>
         </aside>
       </div>
@@ -91,13 +202,31 @@
 
     <section class="architecture" aria-labelledby="architecture-title">
       <h3 id="architecture-title">最終システム構成 <span>※最終版では非表示</span></h3>
-      <div class="flow" aria-label="システム構成"><div class="flow-item">GitHub Pages<br>UI</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-item">Cloudflare Workers<br>API中継</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-item">Cerebras<br>主AI</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-item">Groq<br>予備1</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-item">Gemini<br>予備2</div></div>
-      <div class="stage-card"><strong>現在：STEP 2</strong><p>ホーム画面 → 入力画面 → 完成画面までのUI動線を実装しています。現在の生成結果は動作確認用です。</p></div>
+      <div class="flow" aria-label="システム構成">
+        <div class="flow-item">GitHub Pages<br>UI</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-item">Cloudflare Workers<br>API中継</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-item">Cerebras<br>主AI</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-item">Groq<br>予備1</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-item">Gemini<br>予備2</div>
+      </div>
+      <div class="stage-card">
+        <strong>現在：STEP 2 完成</strong>
+        <p>ホーム画面 → 入力画面 → 完成画面までのUI動線を実装済みです。次はSTEP2.5で10機能の業務仕様とプロンプト仕様を設計します。</p>
+      </div>
     </section>
   </main>
 
   <div id="app-toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <footer class="site-footer"><p>高砂市立高砂中学校　校務AIアシスト — STEP 2 試作版</p><p>© <span data-current-year></span> Takasago Junior High School AI Assist Prototype</p></footer>
+
+  <footer class="site-footer">
+    <p>高砂市立高砂中学校　校務AIアシスト — STEP 2 試作版</p>
+    <p>© <span data-current-year></span> Takasago Junior High School AI Assist Prototype</p>
+  </footer>
+
   <script src="assets/js/app.js" defer></script>
 </body>
 </html>
