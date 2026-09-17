@@ -605,6 +605,13 @@ select:focus {
 
 .site-footer p { margin: 4px 0; }
 
+/* STEP 2.5: PCの100%表示を、従来の90%表示に近い寸法にする。
+   zoomはレイアウト寸法にも反映されるため、transformの余白ずれを避けられる。
+   ブラウザ自身の拡大操作は制限しない。タブレット・スマホは元の寸法を保つ。 */
+@media (min-width: 961px) {
+  body { zoom: 0.9; }
+}
+
 /* ---------- RESPONSIVE ---------- */
 @media (max-width: 960px) {
   .tool-grid {
