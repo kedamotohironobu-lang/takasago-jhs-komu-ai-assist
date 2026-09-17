@@ -1,0 +1,20 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local environment / secrets
+.env
+.env.*
+*.key
+*.pem
+secrets.*
+
+# Cloudflare local state
+.wrangler/
+.dev.vars
+
+# Temporary files
+*.tmp
+*.log
