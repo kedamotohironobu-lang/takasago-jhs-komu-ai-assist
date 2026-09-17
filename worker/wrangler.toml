@@ -1,0 +1,9 @@
+name = "takasago-jhs-komu-ai-assist-api"
+main = "worker.mjs"
+compatibility_date = "2026-09-18"
+
+[vars]
+ALLOWED_ORIGINS = "https://kedamotohironobu-lang.github.io,http://localhost:8000,http://127.0.0.1:8000"
+CEREBRAS_MODEL = "gpt-oss-120b"
+GROQ_MODEL = "openai/gpt-oss-20b"
+GEMINI_MODEL = "gemini-3.6-flash"
