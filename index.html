@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校向け 校務AIアシスト。校務文書、文書チェック、保護者連絡文などをシンプルな操作で支援する試作版です。">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="assets/css/style.css?v=step2-5">
+  <link rel="stylesheet" href="assets/css/style.css?v=step3">
 </head>
 <body>
   <main class="app-shell">
@@ -214,8 +214,8 @@
         <div class="flow-item">Gemini<br>予備2</div>
       </div>
       <div class="stage-card">
-        <strong>現在：STEP 2.5 設計完了</strong>
-        <p>10機能の入力・出力・プロンプト仕様を整理しました。現在はAI未接続の動作確認用です。次はCloudflare Workers経由でAIを接続します。</p>
+        <strong>現在：STEP 3 接続基盤実装済み</strong>
+        <p>Cloudflare Workers経由のAI接続コードを実装済みです。Worker URLとAPIキーの設定後に、本番AI通信へ切り替わります。</p>
       </div>
     </section>
   </main>
@@ -223,10 +223,10 @@
   <div id="app-toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <footer class="site-footer">
-    <p>高砂市立高砂中学校　校務AIアシスト — STEP 2.5 試作版</p>
+    <p>高砂市立高砂中学校　校務AIアシスト — STEP 3 接続準備版</p>
     <p>© <span data-current-year></span> Takasago Junior High School AI Assist Prototype</p>
   </footer>
 
-  <script src="assets/js/app.js?v=step2-5" defer></script>
+  <script src="assets/js/app.js?v=step3" defer></script>
 </body>
 </html>
