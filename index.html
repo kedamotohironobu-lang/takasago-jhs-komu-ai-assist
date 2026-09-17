@@ -3,93 +3,211 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="高砂市立高砂中学校 校務AIアシスト。校務文書、文書チェック、保護者連絡文などを支援する校務向けAIツールの試作版です。">
-  <meta name="theme-color" content="#0c4f82">
-  <title>高砂市立高砂中学校 校務AIアシスト</title>
+  <meta name="description" content="高砂市立高砂中学校向け 校務AIアシスト。校務文書、文書チェック、保護者連絡文などをシンプルな操作で支援する試作版です。">
+  <meta name="theme-color" content="#0d5b91">
+  <title>校務AIアシスト | 高砂市立高砂中学校</title>
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
-  <header class="site-header">
-    <div class="header-inner">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true">🏫</div>
-        <div>
-          <p class="brand-school">高砂市立高砂中学校</p>
-          <h1 class="brand-title">校務AIアシスト</h1>
+  <main class="app-shell">
+    <section class="screen screen-home is-active" id="screen-home" aria-labelledby="home-title">
+      <div class="home-panel">
+        <div class="home-toolbar">
+          <button class="toolbar-link" type="button" data-help-button>ⓘ 使い方</button>
+          <button class="toolbar-link" type="button" data-settings-button>⚙ 設定</button>
+        </div>
+
+        <div class="hero-visual">
+          <div class="hero-backdrop" aria-hidden="true"></div>
+          <div class="hero-content">
+            <h1 id="home-title" class="hero-title">校務AIアシスト</h1>
+            <p class="hero-copy">先生の毎日を、もっとシンプルに、もっと豊かに。</p>
+          </div>
+        </div>
+
+        <div class="tool-grid" id="tool-grid" aria-label="校務AIメニュー">
+          <button class="tool-card c1" type="button" data-tool-id="document">
+            <div class="tool-icon" aria-hidden="true">📝</div>
+            <div class="tool-name">校務文書作成</div>
+            <div class="tool-desc">案内文・通知文・依頼文</div>
+          </button>
+          <button class="tool-card c2" type="button" data-tool-id="check">
+            <div class="tool-icon" aria-hidden="true">✅</div>
+            <div class="tool-name">文書チェック</div>
+            <div class="tool-desc">誤字・表記揺れ・修正案</div>
+          </button>
+          <button class="tool-card c3" type="button" data-tool-id="parent">
+            <div class="tool-icon" aria-hidden="true">📢</div>
+            <div class="tool-name">保護者連絡文</div>
+            <div class="tool-desc">丁寧で分かりやすい文章</div>
+          </button>
+          <button class="tool-card c4" type="button" data-tool-id="newsletter">
+            <div class="tool-icon" aria-hidden="true">🏫</div>
+            <div class="tool-name">学年通信支援</div>
+            <div class="tool-desc">学年通信・おたより</div>
+          </button>
+          <button class="tool-card c5" type="button" data-tool-id="meeting">
+            <div class="tool-icon" aria-hidden="true">📋</div>
+            <div class="tool-name">会議メモ整理</div>
+            <div class="tool-desc">決定事項・課題・担当</div>
+          </button>
+          <button class="tool-card c6" type="button" data-tool-id="lesson">
+            <div class="tool-icon" aria-hidden="true">📚</div>
+            <div class="tool-name">授業アイデア</div>
+            <div class="tool-desc">授業展開・発問案</div>
+          </button>
+          <button class="tool-card c7" type="button" data-tool-id="research">
+            <div class="tool-icon" aria-hidden="true">🎓</div>
+            <div class="tool-name">研修・研究支援</div>
+            <div class="tool-desc">協議事項・研究案</div>
+          </button>
+          <button class="tool-card c8" type="button" data-tool-id="mail">
+            <div class="tool-icon" aria-hidden="true">✉️</div>
+            <div class="tool-name">メール作成</div>
+            <div class="tool-desc">校務向けメール文</div>
+          </button>
+          <button class="tool-card c9" type="button" data-tool-id="rewrite">
+            <div class="tool-icon" aria-hidden="true">🔄</div>
+            <div class="tool-name">言い換え</div>
+            <div class="tool-desc">丁寧・簡潔・保護者向け</div>
+          </button>
+          <button class="tool-card c10" type="button" data-tool-id="faq">
+            <div class="tool-icon" aria-hidden="true">❓</div>
+            <div class="tool-name">校内FAQ</div>
+            <div class="tool-desc">校内ルールから回答</div>
+          </button>
+
+          <div class="future-card" aria-hidden="true">
+            <div class="future-school">
+              <span class="tree tree-a">●</span><span class="tree tree-b">●</span><span class="tree tree-c">●</span>
+              <span class="school-building">▦</span>
+            </div>
+            <div class="future-message">みんなでつくる<br><strong>よりよい学校の未来</strong></div>
+          </div>
         </div>
       </div>
-      <a class="site-link" href="https://www.takasago.ed.jp/taka-t/" target="_blank" rel="noopener noreferrer">学校ホームページ ↗</a>
-    </div>
-  </header>
-
-  <main>
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="badges">
-        <span class="badge">STEP 1 基盤構築済み</span>
-        <span class="badge green">生成AIパイロット校</span>
-        <span class="badge purple">試作版 / 校務利用</span>
-      </div>
-      <h2 id="hero-title">先生の「書く・まとめる・考える」を、もっと簡単に。</h2>
-      <p class="hero-lead">目的を選び、必要事項を入力して「AIで作成する」。最終版では、基本2クリックで使える校務支援ツールを目指します。</p>
-      <div class="motto">校訓　「自主」・「友愛」・「創造」</div>
-      <div class="notice">⚠ 個人を特定できる情報や、成績・健康情報などの機微な情報は入力しないでください。</div>
     </section>
 
-    <section aria-labelledby="tool-title">
-      <div class="section-head">
-        <div>
-          <h3 id="tool-title">校務AIメニュー</h3>
-          <p>STEP 2で正式なクリック画面へ仕上げます。</p>
+    <section class="screen screen-editor" id="screen-editor" aria-labelledby="editor-title" hidden>
+      <div class="editor-layout">
+        <aside class="editor-side">
+          <button class="back-link" type="button" data-back-home>← ホームへ戻る</button>
+          <div class="mini-tool-list" id="mini-tool-list"></div>
+        </aside>
+
+        <div class="editor-main">
+          <div class="editor-progress" aria-label="入力から完成までの流れ">
+            <div class="progress-step is-current"><span>1</span><strong>内容を入力</strong></div>
+            <div class="progress-arrow">›</div>
+            <div class="progress-step"><span>2</span><strong>生成する</strong></div>
+            <div class="progress-arrow">›</div>
+            <div class="progress-step is-muted"><span>3</span><strong>完成</strong></div>
+          </div>
+
+          <section class="editor-card">
+            <div class="editor-heading">
+              <div class="editor-icon" id="editor-icon" aria-hidden="true">📢</div>
+              <div>
+                <h2 id="editor-title" class="editor-title">保護者連絡文</h2>
+                <p class="editor-lead" id="editor-lead">保護者への連絡を、丁寧で分かりやすい文章にします。</p>
+              </div>
+            </div>
+
+            <form id="editor-form" class="editor-form">
+              <label class="field-block">
+                <span class="field-label" id="input-label">連絡内容（箇条書きでもOK）</span>
+                <textarea id="main-input" rows="9" placeholder="ここに内容を入力してください" required></textarea>
+              </label>
+
+              <div class="field-grid" id="option-area">
+                <label class="field-block compact">
+                  <span class="field-label">文章の長さ</span>
+                  <select id="length-select">
+                    <option value="短め">短め</option>
+                    <option value="標準" selected>標準</option>
+                    <option value="詳しく">詳しく</option>
+                  </select>
+                </label>
+
+                <label class="field-block compact">
+                  <span class="field-label">文章の雰囲気</span>
+                  <select id="tone-select">
+                    <option value="丁寧" selected>丁寧</option>
+                    <option value="やわらかい">やわらかい</option>
+                    <option value="公文書調">公文書調</option>
+                  </select>
+                </label>
+              </div>
+
+              <button class="primary-action" type="submit">✨ AIで作成する</button>
+            </form>
+          </section>
         </div>
       </div>
+    </section>
 
-      <div class="tool-grid">
-        <button class="tool-card c1" type="button" data-step2-preview data-name="校務文書作成">
-          <div class="tool-icon" aria-hidden="true">📝</div><div class="tool-name">校務文書作成</div><div class="tool-desc">案内文・依頼文・通知文</div><div class="tool-status">STEP 2で有効化</div>
-        </button>
-        <button class="tool-card c2" type="button" data-step2-preview data-name="文書チェック">
-          <div class="tool-icon" aria-hidden="true">✅</div><div class="tool-name">文書チェック</div><div class="tool-desc">誤字・表記揺れ・修正文</div><div class="tool-status">STEP 2で有効化</div>
-        </button>
-        <button class="tool-card c3" type="button" data-step2-preview data-name="保護者連絡文">
-          <div class="tool-icon" aria-hidden="true">📢</div><div class="tool-name">保護者連絡文</div><div class="tool-desc">丁寧で簡潔な連絡文</div><div class="tool-status">STEP 2で有効化</div>
-        </button>
-        <button class="tool-card c4" type="button" data-step2-preview data-name="学年通信支援">
-          <div class="tool-icon" aria-hidden="true">🏫</div><div class="tool-name">学年通信支援</div><div class="tool-desc">行事・話題から文章案</div><div class="tool-status">STEP 2で有効化</div>
-        </button>
-        <button class="tool-card c5" type="button" data-step2-preview data-name="会議メモ整理">
-          <div class="tool-icon" aria-hidden="true">📋</div><div class="tool-name">会議メモ整理</div><div class="tool-desc">決定事項・課題・担当</div><div class="tool-status">STEP 2で有効化</div>
-        </button>
-        <button class="tool-card c6" type="button" data-step2-preview data-name="授業アイデア">
-          <div class="tool-icon" aria-hidden="true">📚</div><div class="tool-name">授業アイデア</div><div class="tool-desc">授業展開・発問案</div><div class="tool-status">STEP 2で有効化</div>
-        </button>
-        <button class="tool-card c7" type="button" data-step2-preview data-name="研修・研究支援">
-          <div class="tool-icon" aria-hidden="true">🎓</div><div class="tool-name">研修・研究支援</div><div class="tool-desc">協議事項・研究案</div><div class="tool-status">STEP 2で有効化</div>
-        </button>
-        <button class="tool-card c8" type="button" data-step2-preview data-name="メール作成">
-          <div class="tool-icon" aria-hidden="true">✉️</div><div class="tool-name">メール作成</div><div class="tool-desc">校務向けメール案</div><div class="tool-status">STEP 2で有効化</div>
-        </button>
-        <button class="tool-card c9" type="button" data-step2-preview data-name="言い換え">
-          <div class="tool-icon" aria-hidden="true">🔄</div><div class="tool-name">言い換え</div><div class="tool-desc">丁寧・簡潔・保護者向け</div><div class="tool-status">STEP 2で有効化</div>
-        </button>
-        <button class="tool-card c10" type="button" data-step2-preview data-name="校内FAQ">
-          <div class="tool-icon" aria-hidden="true">❓</div><div class="tool-name">校内FAQ</div><div class="tool-desc">校内ルール＋根拠</div><div class="tool-status">後工程でRAG対応</div>
-        </button>
+    <section class="screen screen-result" id="screen-result" aria-labelledby="result-title" hidden>
+      <div class="result-layout">
+        <div class="result-main">
+          <div class="result-head">
+            <div>
+              <p class="result-ok">✅ 文章が完成しました！</p>
+              <h2 id="result-title" class="result-title">完成文章</h2>
+            </div>
+            <div class="result-head-actions">
+              <button class="mini-button" type="button" data-copy-result>📋 コピー</button>
+              <button class="mini-button" type="button" data-back-editor>✏️ 編集に戻る</button>
+            </div>
+          </div>
+
+          <article class="result-card">
+            <pre id="result-output" class="result-output"></pre>
+          </article>
+        </div>
+
+        <aside class="result-side">
+          <div class="side-card">
+            <h3>かんたん調整</h3>
+            <button class="ghost-button" type="button" data-quick-edit="shorter">もう少し短く</button>
+            <button class="ghost-button" type="button" data-quick-edit="casual">もっとやわらかく</button>
+            <button class="ghost-button" type="button" data-quick-edit="formal">より正式にする</button>
+            <button class="ghost-button" type="button" data-quick-edit="retry">別の表現で作る</button>
+          </div>
+
+          <div class="side-card tip-card">
+            <h3>ワンポイント</h3>
+            <p id="result-tip">必要事項を先に箇条書きで書くと、文章を整理しやすくなります。</p>
+          </div>
+
+          <button class="back-home-action" type="button" data-home-from-result>← ホームへ戻る</button>
+        </aside>
       </div>
     </section>
 
     <section class="architecture" aria-labelledby="architecture-title">
-      <h3 id="architecture-title">最終システム構成</h3>
+      <h3 id="architecture-title">最終システム構成 <span>※最終版では非表示</span></h3>
       <div class="flow" aria-label="システム構成">
-        <div class="flow-item">GitHub Pages<br>UI</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-item">Cloudflare Workers<br>API中継</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-item">Cerebras<br>主AI</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-item">Groq<br>予備1</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-item">Gemini<br>予備2</div>
+        <div class="flow-item">GitHub Pages<br>UI</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-item">Cloudflare Workers<br>API中継</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-item">Cerebras<br>主AI</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-item">Groq<br>予備1</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-item">Gemini<br>予備2</div>
       </div>
-      <div class="stage-card"><strong>現在：STEP 1</strong><p>GitHub Pages用の画面基盤まで完成。AIへの通信はまだ行いません。次はUI1→UI2の画面遷移を作ります。</p></div>
+      <div class="stage-card">
+        <strong>現在：STEP 2</strong>
+        <p>ホーム画面 → 入力画面 → 完成画面までのUI動線を実装しています。現在の生成結果は動作確認用です。</p>
+      </div>
     </section>
   </main>
 
-  <div id="step-toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <div id="app-toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <footer class="site-footer">
-    <p>高砂市立高砂中学校 校務AIアシスト — 試作版</p>
+    <p>高砂市立高砂中学校　校務AIアシスト — STEP 2 試作版</p>
     <p>© <span data-current-year></span> Takasago Junior High School AI Assist Prototype</p>
   </footer>
 
