@@ -7,7 +7,8 @@ import {
   stageRagDocument,
   getRagDocumentStatus,
   indexNextRagDocument,
-  finalizeRagDocument
+  finalizeRagDocument,
+  cleanupRagTestDocument
 } from './rag-store.mjs';
 
 const COMMON_SYSTEM_PROMPT = `あなたは中学校教職員の校務を支援する文章作成アシスタントです。日本語で、明確で丁寧な、すぐに編集して使える案を作ります。
@@ -433,6 +434,19 @@ export default {
           error:{code:e?.code || 'RAG_FINALIZE_FAILED',message:String(e?.message || 'RAG finalize failed')},
           detail:e?.missingSamples ? {missingSamples:e.missingSamples} : undefined
         },e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/test-cleanup') {
+      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      const body = await readJsonBody(request);
+      const documentId = String(body?.documentId || '');
+      if (!documentId) return json({ok:false,error:{code:'DOCUMENT_ID_REQUIRED',message:'documentId が必要です。'}},400,origin || '*');
+      try {
+        const result = await cleanupRagTestDocument(env, documentId, 'faq-admin');
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_TEST_CLEANUP_FAILED',message:String(e?.message || 'RAG test cleanup failed')}},e?.status || 500,origin || '*');
       }
     }
 
