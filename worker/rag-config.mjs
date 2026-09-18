@@ -24,6 +24,7 @@ const RAG_CONFIG = Object.freeze({
   }),
 
   embedding: Object.freeze({
+    status: 'candidate-pending-data-policy-approval',
     provider: 'gemini',
     model: 'gemini-embedding-2',
     dimensions: 384,
