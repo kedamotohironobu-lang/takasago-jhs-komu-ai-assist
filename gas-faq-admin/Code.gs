@@ -410,3 +410,20 @@ function createVectorizeIndex() {
 
   return data;
 }
+
+
+/**
+ * STEP5-3: Worker -> Gemini Embedding -> Vectorize の接続試験。
+ * FAQ_ADMIN_TOKEN がScript Propertiesに必要です。
+ */
+function testVectorizeUpsert() {
+  return workerRequest_('/admin/rag/vector-test', 'post', { action: 'upsert' }, true);
+}
+
+/**
+ * Vectorizeのupsertは非同期反映のため、testVectorizeUpsert()実行後に
+ * 数秒待ってからこの関数を実行します。
+ */
+function testVectorizeQuery() {
+  return workerRequest_('/admin/rag/vector-test', 'post', { action: 'query' }, true);
+}
