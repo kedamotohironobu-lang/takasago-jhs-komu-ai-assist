@@ -334,3 +334,79 @@ function formatDate_(date) {
 function formatDateTime_(date) {
   return Utilities.formatDate(date, Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd HH:mm');
 }
+
+
+/**
+ * STEP5-3: Cloudflare Vectorize Index を1回だけ作成します。
+ * 必須Script Properties:
+ * - CLOUDFLARE_ACCOUNT_ID
+ * - CLOUDFLARE_VECTORIZE_TOKEN
+ */
+function createVectorizeIndex() {
+  const props = PropertiesService.getScriptProperties();
+  const accountId = String(props.getProperty('CLOUDFLARE_ACCOUNT_ID') || '').trim();
+  const token = String(props.getProperty('CLOUDFLARE_VECTORIZE_TOKEN') || '').trim();
+
+  if (!accountId) {
+    throw new Error('CLOUDFLARE_ACCOUNT_ID が設定されていません。');
+  }
+  if (!token) {
+    throw new Error('CLOUDFLARE_VECTORIZE_TOKEN が設定されていません。');
+  }
+
+  const indexName = 'takasago-jhs-komu-rag-v1';
+  const url =
+    'https://api.cloudflare.com/client/v4/accounts/' +
+    encodeURIComponent(accountId) +
+    '/vectorize/v2/indexes';
+
+  const payload = {
+    name: indexName,
+    description: '高砂中学校 校務AIアシスト 校内FAQ RAG',
+    config: {
+      dimensions: 384,
+      metric: 'cosine'
+    }
+  };
+
+  const response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'Bearer ' + token
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+
+  const status = response.getResponseCode();
+  const body = response.getContentText();
+
+  console.log('HTTP status: ' + status);
+  console.log(body);
+
+  let data = {};
+  try {
+    data = body ? JSON.parse(body) : {};
+  } catch (e) {
+    throw new Error('CloudflareからJSON以外の応答が返りました。HTTP ' + status);
+  }
+
+  if (status < 200 || status >= 300 || data.success === false) {
+    const errors = Array.isArray(data.errors)
+      ? data.errors.map(function (x) { return x.message || JSON.stringify(x); }).join(' / ')
+      : '';
+    throw new Error(
+      'Vectorize Indexの作成に失敗しました。HTTP ' +
+      status +
+      (errors ? '\n' + errors : '\n' + body)
+    );
+  }
+
+  console.log('Vectorize Index作成成功');
+  console.log('Index: ' + indexName);
+  console.log('Dimensions: 384');
+  console.log('Metric: cosine');
+
+  return data;
+}
