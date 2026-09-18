@@ -326,6 +326,7 @@ async function getRagDocumentStatus(env, documentId) {
       SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) AS active
     FROM chunks WHERE document_id=?
   `, documentId);
+  const fts = await queryOne(db, "SELECT COUNT(*) AS count FROM chunks_fts WHERE document_id=?", documentId);
 
   return {
     document:doc,
@@ -333,7 +334,8 @@ async function getRagDocumentStatus(env, documentId) {
       total:Number(counts?.total || 0),
       ready:Number(counts?.ready || 0),
       errors:Number(counts?.errors || 0),
-      active:Number(counts?.active || 0)
+      active:Number(counts?.active || 0),
+      ftsCount:Number(fts?.count || 0)
     }
   };
 }
