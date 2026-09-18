@@ -16,6 +16,10 @@ database_name = "takasago-jhs-komu-ai-rag"
 database_id = "e060c9de-1315-4860-b5e1-e2b78193ffab"
 migrations_dir = "migrations"
 
+[[vectorize]]
+binding = "RAG_VECTOR"
+index_name = "takasago-jhs-komu-rag-v1"
+
 [vars]
 ALLOWED_ORIGINS = "https://kedamotohironobu-lang.github.io,http://localhost:8000,http://127.0.0.1:8000"
 CEREBRAS_MODEL = "gpt-oss-120b"
