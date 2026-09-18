@@ -528,9 +528,14 @@ async function finalizeRagDocument(env, documentId, actorId = 'faq-admin') {
   await db.batch(statements);
 
   let cleanupMutationId = null;
+  let cleanupWarning = '';
   if (oldVectorIds.length) {
-    const cleanup = await vector.deleteByIds(oldVectorIds.slice(0, 1000));
-    cleanupMutationId = cleanup?.mutationId || null;
+    try {
+      const cleanup = await vector.deleteByIds(oldVectorIds.slice(0, 1000));
+      cleanupMutationId = cleanup?.mutationId || null;
+    } catch {
+      cleanupWarning = 'OLD_VECTOR_CLEANUP_PENDING';
+    }
   }
 
   return {
@@ -541,7 +546,8 @@ async function finalizeRagDocument(env, documentId, actorId = 'faq-admin') {
     activeChunks:total,
     previousDocumentId:previous?.document_id || null,
     oldVectorCleanupCount:oldVectorIds.length,
-    cleanupMutationId
+    cleanupMutationId,
+    cleanupWarning
   };
 }
 
