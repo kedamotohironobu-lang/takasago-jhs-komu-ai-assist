@@ -34,7 +34,9 @@ async function embedWithGemini(env, text) {
     },
     body:JSON.stringify({
       content:{ parts:[{ text:cleanEmbeddingText(text, 12000) }] },
-      output_dimensionality:RAG_CONFIG.embedding.dimensions
+      embedContentConfig:{
+        outputDimensionality:RAG_CONFIG.embedding.dimensions
+      }
     })
   });
 
