@@ -431,3 +431,22 @@ function testVectorizeQuery() {
   console.log(JSON.stringify(result, null, 2));
   return result;
 }
+
+
+/**
+ * STEP5-3: Vectorizeへ登録した接続確認用ベクトルをIDで直接確認します。
+ */
+function testVectorizeGet() {
+  const result = workerRequest_('/admin/rag/vector-test', 'post', { action: 'get' }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * STEP5-3: 接続確認用ベクトルを削除します。
+ */
+function cleanupVectorizeTest() {
+  const result = workerRequest_('/admin/rag/vector-test', 'post', { action: 'delete' }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
