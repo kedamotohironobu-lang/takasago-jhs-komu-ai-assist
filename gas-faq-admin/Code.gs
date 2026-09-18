@@ -450,3 +450,132 @@ function cleanupVectorizeTest() {
   console.log(JSON.stringify(result, null, 2));
   return result;
 }
+
+
+const STEP5_TEST_DOCUMENT_PROPERTY = 'STEP5_TEST_DOCUMENT_ID';
+
+/**
+ * STEP5-4: D1のindexと初期カテゴリを冪等に整備します。
+ */
+function ensureRagSchemaStep5() {
+  const result = workerRequest_('/admin/rag/schema-ensure', 'post', {}, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * STEP5-4: 現在のRAG容量見積りを確認します。
+ */
+function getRagCapacityStep5() {
+  const result = workerRequest_('/admin/rag/capacity', 'get', null, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * STEP5-4: 架空の資料をD1へステージング登録します。
+ * 実際の校内規則ではありません。
+ */
+function stageRagSyntheticStep5() {
+  const body = {
+    sourceId: 'step5-test-pipeline-v1',
+    sourceType: 'upload',
+    fileName: 'STEP5-4_RAG動作確認用資料.txt',
+    title: 'STEP5-4 RAG動作確認用資料',
+    mimeType: 'text/plain',
+    categoryId: 'cat-other',
+    ownerDepartment: 'STEP5動作確認',
+    versionLabel: 'test-v1',
+    approved: true,
+    sections: [
+      {
+        headingPath: '動作確認 > 備品A',
+        text: [
+          'これはSTEP5-4のRAGパイプライン確認専用の架空資料です。実際の校内規則ではありません。',
+          'テスト備品Aの確認日は金曜日です。確認後はテスト記録欄に「確認済み」と記載します。',
+          'テスト備品Aに不具合がある場合は、架空のテスト担当へ確認するものとします。'
+        ].join('\n\n')
+      },
+      {
+        headingPath: '動作確認 > 会議B',
+        text: [
+          'これは検索精度確認のための架空情報です。',
+          'テスト会議Bの資料は前日までに確認する設定です。',
+          'この記載はSTEP5の接続確認だけに使用し、本番の校内ルールとして利用しません。'
+        ].join('\n\n')
+      }
+    ]
+  };
+
+  const result = workerRequest_('/admin/rag/stage', 'post', body, true);
+  const documentId = result && result.result && result.result.documentId;
+  if (documentId) {
+    PropertiesService.getScriptProperties().setProperty(STEP5_TEST_DOCUMENT_PROPERTY, documentId);
+  }
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+function getStep5TestDocumentId_() {
+  const id = String(
+    PropertiesService.getScriptProperties().getProperty(STEP5_TEST_DOCUMENT_PROPERTY) || ''
+  ).trim();
+  if (!id) {
+    throw new Error('STEP5テスト用documentIdがありません。先に stageRagSyntheticStep5() を実行してください。');
+  }
+  return id;
+}
+
+/**
+ * STEP5-4: テスト資料の未処理チャンクを最大20件ずつVectorizeへ登録します。
+ */
+function indexRagSyntheticStep5() {
+  const documentId = getStep5TestDocumentId_();
+  const result = workerRequest_('/admin/rag/index-next', 'post', {
+    documentId: documentId,
+    limit: 20
+  }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * STEP5-4: D1上の処理状態を確認します。
+ */
+function statusRagSyntheticStep5() {
+  const documentId = getStep5TestDocumentId_();
+  const result = workerRequest_(
+    '/admin/rag/document-status?documentId=' + encodeURIComponent(documentId),
+    'get',
+    null,
+    true
+  );
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * STEP5-4: Vectorize反映確認後、D1+FTS5の本番検索対象へ切り替えます。
+ * VECTOR_NOT_READYの場合は数秒待って再実行してください。
+ */
+function finalizeRagSyntheticStep5() {
+  const documentId = getStep5TestDocumentId_();
+  const result = workerRequest_('/admin/rag/finalize', 'post', {
+    documentId: documentId
+  }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * STEP5-4: 架空のテスト資料だけをD1/Vectorize/FTS5から削除します。
+ */
+function cleanupRagSyntheticStep5() {
+  const documentId = getStep5TestDocumentId_();
+  const result = workerRequest_('/admin/rag/test-cleanup', 'post', {
+    documentId: documentId
+  }, true);
+  PropertiesService.getScriptProperties().deleteProperty(STEP5_TEST_DOCUMENT_PROPERTY);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
