@@ -256,3 +256,95 @@ Vectorize binding後:
 - 10,000 active chunks x 384 = 3,840,000 stored dimensions.
 - Retrieval quality must be validated before production cutover.
 - If 384 quality is insufficient, create a new 768-dimension v2 index and re-embed; never change an existing index in place.
+
+
+## STEP5-4 実装
+
+追加:
+- worker/rag-chunker.mjs
+- worker/rag-store.mjs
+
+管理API:
+- POST /admin/rag/schema-ensure
+- GET /admin/rag/capacity
+- POST /admin/rag/stage
+- GET /admin/rag/document-status?documentId=...
+- POST /admin/rag/index-next
+- POST /admin/rag/finalize
+- POST /admin/rag/test-cleanup
+
+すべて FAQ_ADMIN_TOKEN が必要。
+
+### staging
+
+入力された抽出済み本文/sectionsを:
+1. 文書構造優先でchunk化
+2. SHA-256
+3. 容量事前判定
+4. documents / chunks / sync_jobs / audit_logsへD1 transactionで登録
+
+staging時:
+- documents.status=processing
+- documents.is_current=0
+- chunks.is_active=0
+- FTS未登録
+
+### limits
+
+- extracted text: max 500,000 chars/document
+- chunks: max 800/document
+- target 800 chars
+- max 1,200 chars
+- overlap 120 chars
+- vector indexing batch: 20 chunks/request
+
+### capacity guard
+
+Vectorize:
+- active chunks + new chunks のpeak容量を384 dimensionsで計算
+- 5,000,000 stored dimensionsを超える登録を拒否
+
+D1:
+- chunks.textのUTF-8 bytesを取得
+- FTS/index/metadata overheadを考慮し、本文bytes x4を安全側のworking-set estimateとして表示
+- 500MB推定超過時はstagingを拒否
+- 実DBファイルサイズとは別の事前推定値であることをUIに明示する
+
+### indexing
+
+/admin/rag/index-next:
+- pending chunksを最大20件取得
+- Gemini Embedding 2 / 384 dimensions
+- Vectorizeへupsert
+- accepted chunkをembedding_status=readyへ更新
+- sync_jobs progress更新
+
+同じIDへのupsertは再実行可能なので、
+Vectorize成功後D1更新が失敗しても再試行可能。
+
+### finalize
+
+全chunkがembedding_status=readyになった後:
+1. Vectorize getByIdsでsample反映確認
+2. old revisionをinactive
+3. new chunksをactive
+4. FTS5へnew revisionだけ登録
+5. new documentをis_current=1 / active
+6. sync job completed
+7. old Vectorize vectorsをbest-effort cleanup
+
+old vector cleanup失敗でもD1/FTSの切替は巻き戻さない。
+Hybrid RetrievalではD1最終filterを必須にする。
+
+### synthetic verification
+
+GAS helpers:
+- ensureRagSchemaStep5
+- getRagCapacityStep5
+- stageRagSyntheticStep5
+- indexRagSyntheticStep5
+- statusRagSyntheticStep5
+- finalizeRagSyntheticStep5
+- cleanupRagSyntheticStep5
+
+sourceId prefix step5-test- のテスト資料だけhard cleanup可能。
