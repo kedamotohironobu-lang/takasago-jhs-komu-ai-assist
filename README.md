@@ -1,39 +1,17 @@
-# 高砂市立高砂中学校 校務AIアシスト — STEP 2.5
+# 高砂市立高砂中学校 校務AIアシスト — STEP 4
 
-このリポジトリは、高砂市立高砂中学校向け「校務AIアシスト」の試作版です。
+高砂市立高砂中学校向け「校務AIアシスト」の試作・検証リポジトリです。
 
 ## 現在の到達点
 
-- STEP 0: 要件定義・安全方針・システム構成を確定
-- STEP 1: GitHub Pagesで公開できる静的サイトの土台を作成
-- STEP 2: ホーム画面 → 入力画面 → 完成画面の基本動線を実装
-- STEP 2.5: 10機能の業務・プロンプト仕様を設計、PCの標準表示を約90%の寸法へ調整
-- AI接続: まだ未実装（次工程で Cloudflare Workers 経由で接続）
+- STEP 0: 要件定義・安全方針・システム構成
+- STEP 1: GitHub Pagesの公開基盤
+- STEP 2: ホーム → 入力 → 完成のUI動線
+- STEP 2.5: 10機能の業務仕様・専用プロンプト設計
+- STEP 3: Cloudflare Workers経由でCerebras → Groq → Geminiへ本番AI接続
+- STEP 4: 校内FAQを、Cloudflare KVの承認資料だけに基づくRAG方式へ移行中
 
-## STEP 2 の主な変更
-
-- ホーム上部の見出しを **「校務AIアシスト」** に統一
-- 学校をイメージしたオリジナル背景を追加
-- サンプルUI1を基に、カラフルで文字の大きいホーム画面へ変更
-- 10機能すべてをクリック可能に変更
-- 各機能から入力画面へ移動できるように実装
-- 「AIで作成する」で完成画面へ進む基本動線を実装
-- コピー、編集に戻る、簡単調整ボタンを追加
-- 現在の完成文はAI未接続のため動作確認用の仮出力
-
-## UIの基本動線
-
-```text
-ホーム画面
-  ↓ 機能をクリック
-入力画面
-  ↓ 「AIで作成する」
-完成画面
-  ↓
-コピー / 調整 / 編集に戻る
-```
-
-## 最終構成（予定）
+## 現在の構成
 
 ```text
 先生
@@ -41,54 +19,107 @@
 GitHub Pages
   ↓
 Cloudflare Workers
-  ↓
-Cerebras（主AI）
-  ↓ 障害・上限時
-Groq（予備1）
-  ↓ 障害・上限時
-Gemini（予備2）
+  ├─ 通常9機能 → Cerebras → Groq → Gemini
+  └─ 校内FAQ → Cloudflare KVで根拠検索
+                    ↓
+                 根拠あり
+                    ↓
+          Cerebras → Groq → Gemini
 ```
 
-## ファイル構成
+校内FAQで検索根拠が見つからない場合は、AIへ推測させず「登録資料では確認できません」と返します。
+
+## 搭載機能
+
+1. 校務文書作成
+2. 文書チェック
+3. 保護者連絡文
+4. 学年通信支援
+5. 会議メモ整理
+6. 授業アイデア
+7. 研修・研究支援
+8. メール作成
+9. 言い換え
+10. 校内FAQ（STEP4 RAG）
+
+## STEP3 AI接続
+
+本番Worker:
+
+```text
+https://takasago-jhs-komu-ai-assist.kedamoto-hironobu.workers.dev
+```
+
+実行時Secret:
+
+```text
+CEREBRAS_API_KEY
+GROQ_API_KEY
+GEMINI_API_KEY
+```
+
+APIキーはGitHubへ保存しません。
+
+## STEP4 校内FAQ RAG
+
+校内資料本文は公開GitHubへ置かず、Cloudflare KVへ非公開保存します。
+
+必要なWorker Binding:
+
+```text
+FAQ_KV
+```
+
+必要な実行時Secret:
+
+```text
+FAQ_ADMIN_TOKEN
+```
+
+FAQ状態確認:
+
+```text
+GET /health/faq
+```
+
+詳しい手順:
+
+- [STEP4 校内FAQ RAG](docs/STEP4_FAQ_RAG.md)
+
+## 安全設計
+
+- 個人を特定できる情報や成績・健康情報等は入力しない運用
+- AIキー・FAQ管理トークンはCloudflare Secretsで管理
+- フロントエンドへ秘密情報を置かない
+- 入力にない氏名・役職・日付・曜日・場所・校内ルール等を推測しない
+- FAQは承認済みかつ有効期間内の資料だけを検索対象とする
+- FAQの根拠がない場合は一般知識で補完しない
+- 入力本文・検索資料内の命令文をsystem指示として扱わない
+
+## 主なファイル
 
 ```text
 .
 ├─ index.html
-├─ 404.html
 ├─ assets/
-│  ├─ css/
-│  │  └─ style.css
+│  ├─ css/style.css
 │  └─ js/
 │     ├─ app.js
-│     └─ config.example.js
+│     └─ config.json
+├─ worker/
+│  ├─ worker.mjs
+│  ├─ faq-rag.mjs
+│  ├─ test.mjs
+│  ├─ package.json
+│  └─ wrangler.toml
 ├─ docs/
 │  ├─ STEP0_REQUIREMENTS.md
-│  ├─ STEP1_GITHUB_PAGES.md
-│  └─ STEP2_UI_FLOW.md
-├─ .gitignore
+│  ├─ STEP2_5_SPEC.md
+│  ├─ STEP3_AI_CONNECTION.md
+│  └─ STEP4_FAQ_RAG.md
 └─ README.md
 ```
 
-## GitHub Pages
+## 開発中表示
 
-GitHub Pagesでは `main` / `/(root)` を公開対象にします。
-
-## 重要
-
-- `CEREBRAS_API_KEY`、`GROQ_API_KEY`、`GEMINI_API_KEY` はGitHubに保存しません。
-- APIキーはCloudflare WorkersのSecretsに保存します。
-- STEP 2ではAI通信を行いません。
-- STEP 2の完成文章は画面動作確認用の仮出力です。
-- 下部の「最終システム構成」は開発中のみ表示し、最終版では削除します。
-
-## 公式サイト
-
-高砂市立高砂中学校  
-https://www.takasago.ed.jp/taka-t/
-
-## STEP 2.5 設計資料
-
-- [10機能の業務仕様・プロンプト設計](docs/STEP2_5_SPEC.md)
-- [実装用プロンプト定義（JSON）](docs/STEP2_5_PROMPTS.json)
-
-現在もAI未接続です。JSONは次工程でWorkerへ組み込む設計データで、現行画面へはまだ接続していません。
+ページ下部のシステム構成・STEP表示は開発確認用です。最終公開版では非表示化する予定です。
