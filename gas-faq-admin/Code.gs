@@ -417,7 +417,9 @@ function createVectorizeIndex() {
  * FAQ_ADMIN_TOKEN がScript Propertiesに必要です。
  */
 function testVectorizeUpsert() {
-  return workerRequest_('/admin/rag/vector-test', 'post', { action: 'upsert' }, true);
+  const result = workerRequest_('/admin/rag/vector-test', 'post', { action: 'upsert' }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
 }
 
 /**
@@ -425,5 +427,7 @@ function testVectorizeUpsert() {
  * 数秒待ってからこの関数を実行します。
  */
 function testVectorizeQuery() {
-  return workerRequest_('/admin/rag/vector-test', 'post', { action: 'query' }, true);
+  const result = workerRequest_('/admin/rag/vector-test', 'post', { action: 'query' }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
 }
