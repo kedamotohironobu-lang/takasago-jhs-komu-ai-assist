@@ -190,13 +190,40 @@ async function generateWithFallback(env, messages) {
   throw Object.assign(new Error('All providers failed'), { code:'ALL_PROVIDERS_FAILED', status:503, failures });
 }
 
+async function ragDbStatus(env) {
+  if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
+    return { configured:false, schemaReady:false, missingTables:['categories','documents','chunks','audit_logs','sync_jobs','chunks_fts'] };
+  }
+
+  const required = ['categories','documents','chunks','audit_logs','sync_jobs','chunks_fts'];
+  try {
+    const result = await env.RAG_DB.prepare(
+      "SELECT name FROM sqlite_master WHERE name IN ('categories','documents','chunks','audit_logs','sync_jobs','chunks_fts')"
+    ).all();
+    const found = new Set((result?.results || []).map(row => String(row?.name || '')));
+    const missingTables = required.filter(name => !found.has(name));
+    return {
+      configured:true,
+      schemaReady:missingTables.length === 0,
+      missingTables
+    };
+  } catch (e) {
+    return {
+      configured:true,
+      schemaReady:false,
+      missingTables:required,
+      error:'D1_HEALTH_QUERY_FAILED'
+    };
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const origin = pickCorsOrigin(request, env);
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
     if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token','Access-Control-Max-Age':'86400','Vary':'Origin'}});
-    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'4.0.0'},200,origin || '*');
+    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.0.0'},200,origin || '*');
     if (request.method === 'GET' && url.pathname === '/health/providers') {
       return json({
         ok:true,
@@ -215,6 +242,10 @@ export default {
     if (request.method === 'GET' && url.pathname === '/health/faq') {
       const status = await faqStatus(env);
       return json({ok:true,faq:status},200,origin || '*');
+    }
+    if (request.method === 'GET' && url.pathname === '/health/rag-db') {
+      const status = await ragDbStatus(env);
+      return json({ok:true,ragDb:status},200,origin || '*');
     }
 
     if (request.method === 'GET' && url.pathname === '/admin/faq/sources') {
