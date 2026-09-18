@@ -545,6 +545,57 @@ async function finalizeRagDocument(env, documentId, actorId = 'faq-admin') {
   };
 }
 
+async function cleanupRagTestDocument(env, documentId, actorId = 'faq-admin') {
+  const db = requireDb(env);
+  const vector = requireVector(env);
+
+  const doc = await queryOne(db,
+    "SELECT document_id,source_id,title FROM documents WHERE document_id=?",
+    documentId
+  );
+  if (!doc) throw fail('DOCUMENT_NOT_FOUND', '資料が見つかりません。', 404);
+  if (!String(doc.source_id || '').startsWith('step5-test-')) {
+    throw fail('TEST_CLEANUP_FORBIDDEN', 'テスト用資料以外はこの機能では削除できません。', 403);
+  }
+
+  const rows = await db.prepare(
+    "SELECT vector_id FROM chunks WHERE document_id=? AND vector_id IS NOT NULL"
+  ).bind(documentId).all();
+  const vectorIds = (rows?.results || []).map(r => r.vector_id).filter(Boolean);
+
+  const logId = `log-${crypto.randomUUID()}`;
+  await db.batch([
+    db.prepare("DELETE FROM chunks_fts WHERE document_id=?").bind(documentId),
+    db.prepare("DELETE FROM sync_jobs WHERE document_id=? OR previous_document_id=?").bind(documentId, documentId),
+    db.prepare("DELETE FROM documents WHERE document_id=?").bind(documentId),
+    db.prepare(`
+      INSERT INTO audit_logs (log_id,occurred_at,actor_id,action,entity_type,entity_id,summary,metadata_json)
+      VALUES (?,CURRENT_TIMESTAMP,?,'test_document_cleaned','document',?,?,?)
+    `).bind(
+      logId,actorId,documentId,`STEP5テスト資料「${doc.title}」を削除`,
+      JSON.stringify({ sourceId:doc.source_id, vectorCount:vectorIds.length })
+    )
+  ]);
+
+  let mutationId = null;
+  if (vectorIds.length) {
+    try {
+      const mutation = await vector.deleteByIds(vectorIds.slice(0, 1000));
+      mutationId = mutation?.mutationId || null;
+    } catch {
+      // D1 cleanup is authoritative. A stray test vector is harmless and can be deleted later.
+    }
+  }
+
+  return {
+    ok:true,
+    documentId,
+    sourceId:doc.source_id,
+    deletedVectorCount:vectorIds.length,
+    mutationId
+  };
+}
+
 export {
   MAX_EXTRACTED_CHARS,
   MAX_CHUNKS_PER_DOCUMENT,
@@ -554,5 +605,6 @@ export {
   stageRagDocument,
   getRagDocumentStatus,
   indexNextRagDocument,
-  finalizeRagDocument
+  finalizeRagDocument,
+  cleanupRagTestDocument
 };
