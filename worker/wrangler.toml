@@ -6,6 +6,10 @@ compatibility_date = "2026-09-18"
 enabled = true
 head_sampling_rate = 1
 
+[[kv_namespaces]]
+binding = "FAQ_KV"
+id = "fff783123031417283650ca99d8661f1"
+
 [vars]
 ALLOWED_ORIGINS = "https://kedamotohironobu-lang.github.io,http://localhost:8000,http://127.0.0.1:8000"
 CEREBRAS_MODEL = "gpt-oss-120b"
