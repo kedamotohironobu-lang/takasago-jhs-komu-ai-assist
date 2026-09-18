@@ -605,3 +605,50 @@ function testHybridRetrievalParaphraseStep5() {
   console.log(JSON.stringify(result, null, 2));
   return result;
 }
+
+
+/**
+ * STEP5-5: 架空資料を再登録し、Hybrid Retrievalまで一括確認します。
+ * 失敗時は途中状態を残すため、cleanupは自動実行しません。
+ */
+function runHybridRetrievalSyntheticStep5() {
+  const stage = stageRagSyntheticStep5();
+  const index = indexRagSyntheticStep5();
+
+  let finalized = null;
+  let lastError = null;
+
+  for (let i = 0; i < 4; i++) {
+    Utilities.sleep(6000);
+    try {
+      finalized = finalizeRagSyntheticStep5();
+      lastError = null;
+      break;
+    } catch (e) {
+      lastError = e;
+      const message = String(e && e.message ? e.message : e);
+      if (message.indexOf('Vectorizeへの反映待ち') === -1) {
+        throw e;
+      }
+    }
+  }
+
+  if (!finalized) {
+    throw lastError || new Error(
+      'Vectorizeへの反映待ちです。少し待って finalizeRagSyntheticStep5() を実行してください。'
+    );
+  }
+
+  const retrieval = testHybridRetrievalStep5();
+
+  const result = {
+    ok: true,
+    stage: stage,
+    index: index,
+    finalize: finalized,
+    retrieval: retrieval
+  };
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
