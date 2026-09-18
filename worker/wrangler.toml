@@ -10,6 +10,12 @@ head_sampling_rate = 1
 binding = "FAQ_KV"
 id = "fff783123031417283650ca99d8661f1"
 
+[[d1_databases]]
+binding = "RAG_DB"
+database_name = "takasago-jhs-komu-ai-rag"
+database_id = "e060c9de-1315-4860-b5e1-e2b78193ffab"
+migrations_dir = "migrations"
+
 [vars]
 ALLOWED_ORIGINS = "https://kedamotohironobu-lang.github.io,http://localhost:8000,http://127.0.0.1:8000"
 CEREBRAS_MODEL = "gpt-oss-120b"
