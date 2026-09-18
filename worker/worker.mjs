@@ -1,6 +1,7 @@
 import { faqStatus, listFaqSources, retrieveFaq, buildFaqContext, upsertFaqSource, removeFaqSource } from './faq-rag.mjs';
 import { RAG_CONFIG } from './rag-config.mjs';
 import { embedDocument, embedQuery } from './embedding-gemini.mjs';
+import { hybridRetrieve } from './rag-retrieval.mjs';
 import {
   ensureRagSchemaExtras,
   getRagCapacity,
@@ -332,7 +333,7 @@ export default {
     const origin = pickCorsOrigin(request, env);
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
     if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token','Access-Control-Max-Age':'86400','Vary':'Origin'}});
-    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.2.0'},200,origin || '*');
+    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.3.0'},200,origin || '*');
     if (request.method === 'GET' && url.pathname === '/health/providers') {
       return json({
         ok:true,
@@ -447,6 +448,21 @@ export default {
         return json({ok:true,result},200,origin || '*');
       } catch (e) {
         return json({ok:false,error:{code:e?.code || 'RAG_TEST_CLEANUP_FAILED',message:String(e?.message || 'RAG test cleanup failed')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/retrieval-test') {
+      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      const body = await readJsonBody(request);
+      const query = String(body?.query || '').trim();
+      if (!query) return json({ok:false,error:{code:'QUERY_REQUIRED',message:'質問を入力してください。'}},400,origin || '*');
+      try {
+        const result = await hybridRetrieve(env, query, {
+          evidenceLimit:body?.evidenceLimit
+        });
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_RETRIEVAL_TEST_FAILED',message:String(e?.message || 'RAG retrieval test failed')}},e?.status || 500,origin || '*');
       }
     }
 
