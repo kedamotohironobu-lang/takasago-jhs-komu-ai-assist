@@ -579,3 +579,29 @@ function cleanupRagSyntheticStep5() {
   console.log(JSON.stringify(result, null, 2));
   return result;
 }
+
+
+/**
+ * STEP5-5: Vectorize + FTS5 + RRF のHybrid Retrievalを確認します。
+ * 先にSTEP5の架空資料を stage -> index -> finalize しておいてください。
+ */
+function testHybridRetrievalStep5() {
+  const result = workerRequest_('/admin/rag/retrieval-test', 'post', {
+    query: 'テスト備品Aは何曜日に確認しますか？',
+    evidenceLimit: 4
+  }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * STEP5-5: 別表現でも意味検索できるか確認します。
+ */
+function testHybridRetrievalParaphraseStep5() {
+  const result = workerRequest_('/admin/rag/retrieval-test', 'post', {
+    query: '備品Aのチェックをする日はいつですか？',
+    evidenceLimit: 4
+  }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
