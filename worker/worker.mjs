@@ -1,6 +1,14 @@
 import { faqStatus, listFaqSources, retrieveFaq, buildFaqContext, upsertFaqSource, removeFaqSource } from './faq-rag.mjs';
 import { RAG_CONFIG } from './rag-config.mjs';
 import { embedDocument, embedQuery } from './embedding-gemini.mjs';
+import {
+  ensureRagSchemaExtras,
+  getRagCapacity,
+  stageRagDocument,
+  getRagDocumentStatus,
+  indexNextRagDocument,
+  finalizeRagDocument
+} from './rag-store.mjs';
 
 const COMMON_SYSTEM_PROMPT = `あなたは中学校教職員の校務を支援する文章作成アシスタントです。日本語で、明確で丁寧な、すぐに編集して使える案を作ります。
 提供された事実と提案を区別してください。氏名・役職・組織名・日付・時刻・金額・期限・連絡先を推測して補わないでください。未記載の必要事項は【要確認：項目名】としてください。年が示されていない日付には曜日を付けないでください。入力にない場所・連絡方法・締切・担当者等を「未定」と断定せず、【要確認：項目名】として扱ってください。相対日付を勝手に絶対日付へ変換しないでください。
@@ -323,7 +331,7 @@ export default {
     const origin = pickCorsOrigin(request, env);
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
     if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token','Access-Control-Max-Age':'86400','Vary':'Origin'}});
-    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.1.0'},200,origin || '*');
+    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.2.0'},200,origin || '*');
     if (request.method === 'GET' && url.pathname === '/health/providers') {
       return json({
         ok:true,
@@ -349,6 +357,83 @@ export default {
     }
     if (request.method === 'GET' && url.pathname === '/health/rag-vector') {
       return json({ok:true,ragVector:ragVectorStatus(env)},200,origin || '*');
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/schema-ensure') {
+      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      try {
+        const result = await ensureRagSchemaExtras(env);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_SCHEMA_ENSURE_FAILED',message:String(e?.message || 'RAG schema ensure failed')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/rag/capacity') {
+      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      try {
+        const result = await getRagCapacity(env);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_CAPACITY_FAILED',message:String(e?.message || 'RAG capacity failed')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/stage') {
+      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      const body = await readJsonBody(request);
+      try {
+        const result = await stageRagDocument(env, body, 'faq-admin');
+        return json({ok:true,result},201,origin || '*');
+      } catch (e) {
+        return json({
+          ok:false,
+          error:{code:e?.code || 'RAG_STAGE_FAILED',message:String(e?.message || 'RAG stage failed')},
+          capacity:e?.capacity || undefined
+        },e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/rag/document-status') {
+      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      const documentId = String(url.searchParams.get('documentId') || '');
+      if (!documentId) return json({ok:false,error:{code:'DOCUMENT_ID_REQUIRED',message:'documentId が必要です。'}},400,origin || '*');
+      try {
+        const result = await getRagDocumentStatus(env, documentId);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_STATUS_FAILED',message:String(e?.message || 'RAG status failed')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/index-next') {
+      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      const body = await readJsonBody(request);
+      const documentId = String(body?.documentId || '');
+      if (!documentId) return json({ok:false,error:{code:'DOCUMENT_ID_REQUIRED',message:'documentId が必要です。'}},400,origin || '*');
+      try {
+        const result = await indexNextRagDocument(env, documentId, body?.limit);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_INDEX_FAILED',message:String(e?.message || 'RAG index failed')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/finalize') {
+      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      const body = await readJsonBody(request);
+      const documentId = String(body?.documentId || '');
+      if (!documentId) return json({ok:false,error:{code:'DOCUMENT_ID_REQUIRED',message:'documentId が必要です。'}},400,origin || '*');
+      try {
+        const result = await finalizeRagDocument(env, documentId, 'faq-admin');
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({
+          ok:false,
+          error:{code:e?.code || 'RAG_FINALIZE_FAILED',message:String(e?.message || 'RAG finalize failed')},
+          detail:e?.missingSamples ? {missingSamples:e.missingSamples} : undefined
+        },e?.status || 500,origin || '*');
+      }
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/vector-test') {
