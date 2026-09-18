@@ -211,3 +211,48 @@ Embedding provider decision:
 - gemini-embedding-2
 - 384 dimensions
 - cosine
+
+
+## STEP5-3 Vectorize
+
+Index:
+- name: takasago-jhs-komu-rag-v1
+- dimensions: 384
+- metric: cosine
+- binding: RAG_VECTOR
+
+Gemini Embedding 2:
+- model: gemini-embedding-2
+- output dimensionality: 384
+- document format: title: {title} | text: {content}
+- query format: task: question answering | query: {content}
+
+Health:
+- GET /health/rag-vector
+
+Binding未設定時:
+```json
+{
+  "ok": true,
+  "ragVector": {
+    "configured": false,
+    "vectorBinding": false,
+    "geminiEmbedding": true,
+    "model": "gemini-embedding-2",
+    "dimensions": 384,
+    "metric": "cosine",
+    "indexName": "takasago-jhs-komu-rag-v1"
+  }
+}
+```
+
+Vectorize binding後:
+- vectorBinding=true
+- Gemini key設定済みなら configured=true
+
+384 dimensions rationale:
+- Gemini Embedding 2 supports flexible 128-3072 dimensions.
+- Google recommends 768/1536/3072, but 384 is selected for the project's Free-tier capacity target.
+- 10,000 active chunks x 384 = 3,840,000 stored dimensions.
+- Retrieval quality must be validated before production cutover.
+- If 384 quality is insufficient, create a new 768-dimension v2 index and re-embed; never change an existing index in place.
