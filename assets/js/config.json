@@ -1,5 +1,5 @@
 {
-  "workerBaseUrl": "",
-  "allowDemoFallback": true,
+  "workerBaseUrl": "https://takasago-jhs-komu-ai-assist.kedamoto-hironobu.workers.dev",
+  "allowDemoFallback": false,
   "requestTimeoutMs": 65000
 }
