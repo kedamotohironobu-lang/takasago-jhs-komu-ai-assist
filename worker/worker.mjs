@@ -1,5 +1,6 @@
 import { faqStatus, listFaqSources, retrieveFaq, buildFaqContext, upsertFaqSource, removeFaqSource } from './faq-rag.mjs';
 import { RAG_CONFIG } from './rag-config.mjs';
+import { embedDocument, embedQuery } from './embedding-gemini.mjs';
 
 const COMMON_SYSTEM_PROMPT = `あなたは中学校教職員の校務を支援する文章作成アシスタントです。日本語で、明確で丁寧な、すぐに編集して使える案を作ります。
 提供された事実と提案を区別してください。氏名・役職・組織名・日付・時刻・金額・期限・連絡先を推測して補わないでください。未記載の必要事項は【要確認：項目名】としてください。年が示されていない日付には曜日を付けないでください。入力にない場所・連絡方法・締切・担当者等を「未定」と断定せず、【要確認：項目名】として扱ってください。相対日付を勝手に絶対日付へ変換しないでください。
@@ -191,6 +192,64 @@ async function generateWithFallback(env, messages) {
   throw Object.assign(new Error('All providers failed'), { code:'ALL_PROVIDERS_FAILED', status:503, failures });
 }
 
+async function vectorConnectionTest(env, action='upsert') {
+  if (!env?.RAG_VECTOR || typeof env.RAG_VECTOR.upsert !== 'function' || typeof env.RAG_VECTOR.query !== 'function') {
+    throw Object.assign(new Error('RAG_VECTOR is not configured'), { code:'RAG_VECTOR_NOT_CONFIGURED', status:503 });
+  }
+
+  const testId = 'step5-vector-test-v1';
+
+  if (action === 'upsert') {
+    const values = await embedDocument(env, {
+      title:'STEP5 Vectorize 接続確認',
+      heading:'動作確認',
+      text:'高砂中学校 校務AIアシストのVectorize接続確認用データです。テスト用キーワードは「たかさごベクトル確認」です。実際の校内規則ではありません。'
+    });
+
+    const mutation = await env.RAG_VECTOR.upsert([{
+      id:testId,
+      values,
+      metadata:{
+        kind:'connection-test',
+        source:'step5',
+        title:'STEP5 Vectorize 接続確認'
+      }
+    }]);
+
+    return {
+      action:'upsert',
+      ok:true,
+      vectorId:testId,
+      dimensions:values.length,
+      mutationId:mutation?.mutationId || null
+    };
+  }
+
+  if (action === 'query') {
+    const values = await embedQuery(env, 'Vectorizeの接続確認用キーワードは何ですか？');
+    const result = await env.RAG_VECTOR.query(values, {
+      topK:3,
+      returnValues:false,
+      returnMetadata:'all'
+    });
+
+    const matches = Array.isArray(result?.matches) ? result.matches : [];
+    return {
+      action:'query',
+      ok:true,
+      dimensions:values.length,
+      found:matches.some(m=>m?.id === testId),
+      matches:matches.map(m=>({
+        id:m?.id || '',
+        score:Number(m?.score || 0),
+        metadata:m?.metadata || {}
+      }))
+    };
+  }
+
+  throw Object.assign(new Error('Invalid vector test action'), { code:'INVALID_VECTOR_TEST_ACTION', status:400 });
+}
+
 function ragVectorStatus(env) {
   const vectorConfigured = Boolean(env?.RAG_VECTOR && typeof env.RAG_VECTOR.query === 'function');
   const geminiConfigured = Boolean(String(env?.GEMINI_API_KEY || '').trim());
@@ -265,6 +324,18 @@ export default {
     }
     if (request.method === 'GET' && url.pathname === '/health/rag-vector') {
       return json({ok:true,ragVector:ragVectorStatus(env)},200,origin || '*');
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/vector-test') {
+      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      const body = await readJsonBody(request);
+      const action = String(body?.action || 'upsert');
+      try {
+        const result = await vectorConnectionTest(env, action);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'VECTOR_TEST_FAILED',message:String(e?.message || 'Vectorize test failed')}},e?.status || 500,origin || '*');
+      }
     }
 
     if (request.method === 'GET' && url.pathname === '/admin/faq/sources') {
