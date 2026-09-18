@@ -173,6 +173,29 @@ async function faqStatus(env) {
   };
 }
 
+async function listFaqSources(env) {
+  const loaded = await readIndex(env);
+  if (!loaded.configured) return {configured:false,updatedAt:null,sources:[]};
+  const now = new Date();
+  return {
+    configured:true,
+    updatedAt:loaded.index.updatedAt || null,
+    sources:(loaded.index.sources || []).map(source=>({
+      sourceId:source.sourceId,
+      title:source.title,
+      version:source.version || '',
+      updatedAt:source.updatedAt || '',
+      validFrom:source.validFrom || '',
+      validUntil:source.validUntil || '',
+      url:source.url || '',
+      owner:source.owner || '',
+      approved:source.approved === true,
+      active:isSourceActive(source, now),
+      chunkCount:Array.isArray(source.chunks) ? source.chunks.length : 0
+    }))
+  };
+}
+
 async function retrieveFaq(env, query, limit=5) {
   const loaded = await readIndex(env);
   if (!loaded.configured) return {configured:false,hasSources:false,hits:[]};
@@ -223,6 +246,7 @@ export {
   isSourceActive,
   scoreChunk,
   faqStatus,
+  listFaqSources,
   retrieveFaq,
   buildFaqContext,
   validateSourcePayload,
