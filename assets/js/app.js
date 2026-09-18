@@ -11,7 +11,7 @@
     research: { icon:'🎓', name:'研修・研究支援', lead:'校内研修や研究テーマに合わせて、協議事項や研究案を整理します。', label:'テーマ・課題・相談したいこと', placeholder:'例）研究テーマ：主体的に学ぶ生徒の育成／課題：話合い活動が浅くなりがち／相談：協議の柱', title:'研修・研究支援案', tip:'現在の課題と目指す姿の両方を書くと、協議の柱を整理しやすくなります。', usesOptions:true, quick:['shorter','casual','formal','retry'] },
     mail: { icon:'✉️', name:'メール作成', lead:'相手・目的・要点から、校務で使いやすいメール文を作成します。', label:'相手・目的・要点', placeholder:'例）相手：学年教員／目的：会議日程の連絡／来週火曜15:30、被服室、議題は文化祭準備', title:'校務メール案', tip:'相手・目的・日時・依頼事項を分けて書くと、短く分かりやすいメールになります。', usesOptions:true, quick:['shorter','casual','formal','retry'] },
     rewrite: { icon:'🔄', name:'言い換え', lead:'元の文章を、目的に応じて丁寧・簡潔・やわらかな表現に言い換えます。', label:'言い換えたい文章', placeholder:'例）提出がまだの人は、できるだけ早く出してください。', title:'言い換え結果', tip:'誰に伝える文章なのかを入力文に添えると、より自然な表現になります。', usesOptions:true, quick:['shorter','casual','formal','retry'] },
-    faq: { icon:'❓', name:'校内FAQ', lead:'校内ルールや事務手続きについて質問する画面です。', label:'質問内容', placeholder:'例）出張後の復命書はいつまでに提出しますか？', title:'校内FAQ', tip:'校内FAQは根拠資料の接続後に有効化します。根拠のない回答は表示しません。', usesOptions:false, quick:[] }
+    faq: { icon:'❓', name:'校内FAQ', lead:'承認済みの校内資料を検索し、根拠が確認できる範囲だけで回答します。', label:'校内ルール・手続きについての質問', placeholder:'例）出張後の復命書はいつまでに提出しますか？', title:'校内FAQ回答', tip:'回答は登録済みの承認資料だけを根拠にします。根拠が見つからない場合は推測せず、その旨を表示します。', usesOptions:false, quick:['shorter','retry'] }
   };
 
   const state = {
@@ -37,9 +37,9 @@
   const stageStrong = document.querySelector('.stage-card strong');
   const stageText = document.querySelector('.stage-card p');
   const footerStage = document.querySelector('.site-footer p');
-  if (stageStrong) stageStrong.textContent = '現在：STEP 3 接続基盤実装済み';
-  if (stageText) stageText.textContent = 'Cloudflare Workers経由のAI接続コードを実装済みです。Worker URLとAPIキーの設定後に、本番AI通信へ切り替わります。';
-  if (footerStage) footerStage.textContent = '高砂市立高砂中学校　校務AIアシスト — STEP 3 接続準備版';
+  if (stageStrong) stageStrong.textContent = '現在：STEP 4 校内FAQ・RAG基盤実装';
+  if (stageText) stageText.textContent = '通常の9機能は本番AIへ接続済みです。校内FAQはCloudflare KVの承認資料だけを検索して回答するRAG方式へ移行しています。';
+  if (footerStage) footerStage.textContent = '高砂市立高砂中学校　校務AIアシスト — STEP 4 RAG基盤版';
 
   const tool = (id) => TOOLS[id] || TOOLS.parent;
 
@@ -100,7 +100,7 @@
   }
 
   function demoResult(input) {
-    if (state.currentTool === 'faq') return '【校内FAQ】\n現在は校内根拠資料が接続されていないため、回答を生成しません。\n根拠資料を接続する後工程で有効化します。';
+    if (state.currentTool === 'faq') return '【校内FAQ】\n校内FAQはCloudflare KVの承認資料を検索して回答します。現在はWorker接続設定を確認してください。';
     return `【STEP 3 接続待ち】\nCloudflare Worker のURLがまだ設定されていないため、AI通信は行っていません。\n\n【入力内容】\n${input}\n\n※ assets/js/config.json の workerBaseUrl を設定するとAI生成へ切り替わります。`;
   }
 
@@ -147,7 +147,8 @@
   function errorMessage(err) {
     if (err?.name === 'AbortError') return 'AI通信がタイムアウトしました。もう一度お試しください。';
     if (err?.code === 'WORKER_NOT_CONFIGURED') return 'Cloudflare Worker のURLが未設定です。';
-    if (err?.code === 'FAQ_NOT_READY') return '校内FAQは根拠資料の接続後に有効化します。';
+    if (err?.code === 'FAQ_RAG_NOT_CONFIGURED') return '校内FAQの非公開資料ストレージがまだ設定されていません。';
+    if (err?.code === 'FAQ_NO_SOURCES') return '校内FAQの承認資料がまだ登録されていません。';
     if (err?.status === 429 || err?.code === 'RATE_LIMITED') return 'AIの利用上限に達しました。少し時間をおいて再度お試しください。';
     if (err?.status >= 500 || err?.code === 'ALL_PROVIDERS_FAILED') return 'AIサービスへ接続できませんでした。しばらくしてから再度お試しください。';
     return err?.message || 'AI生成中にエラーが発生しました。';
@@ -196,6 +197,6 @@
   nodes.helpButton?.addEventListener('click', () => showToast('機能を選ぶ → 内容を入力 →「AIで作成する」の順です。'));
   nodes.settingsButton?.addEventListener('click', async () => {
     const cfg = await loadConfig();
-    showToast(cfg.workerBaseUrl ? 'STEP3：AI接続設定を読み込み済みです。' : 'STEP3：Worker URLはまだ未設定です。', 3600);
+    showToast(cfg.workerBaseUrl ? 'STEP4：AI接続済み。校内FAQはRAG用資料ストレージの状態に応じて動作します。' : 'STEP4：Worker URLが未設定です。', 4200);
   });
 })();
