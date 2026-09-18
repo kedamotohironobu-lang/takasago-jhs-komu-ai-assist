@@ -247,6 +247,31 @@ async function vectorConnectionTest(env, action='upsert') {
     };
   }
 
+  if (action === 'get') {
+    const vectors = await env.RAG_VECTOR.getByIds([testId]);
+    const list = Array.isArray(vectors) ? vectors : [];
+    return {
+      action:'get',
+      ok:true,
+      found:list.some(v=>v?.id === testId),
+      vectors:list.map(v=>({
+        id:v?.id || '',
+        dimensions:Array.isArray(v?.values) ? v.values.length : 0,
+        metadata:v?.metadata || {}
+      }))
+    };
+  }
+
+  if (action === 'delete') {
+    const mutation = await env.RAG_VECTOR.deleteByIds([testId]);
+    return {
+      action:'delete',
+      ok:true,
+      vectorId:testId,
+      mutationId:mutation?.mutationId || null
+    };
+  }
+
   throw Object.assign(new Error('Invalid vector test action'), { code:'INVALID_VECTOR_TEST_ACTION', status:400 });
 }
 
