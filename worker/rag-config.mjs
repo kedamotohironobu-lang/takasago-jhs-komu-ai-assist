@@ -1,0 +1,86 @@
+// STEP5 production RAG constants.
+// This file is not wired into the live Worker yet.
+// Values are intentionally centralized before the D1/Vectorize cutover.
+
+const RAG_CONFIG = Object.freeze({
+  schemaVersion: 1,
+
+  chunking: Object.freeze({
+    targetChars: 800,
+    minChars: 250,
+    maxChars: 1200,
+    overlapChars: 120,
+    maxEvidenceChars: 5500
+  }),
+
+  retrieval: Object.freeze({
+    vectorTopK: 15,
+    ftsTopK: 15,
+    fusedTopK: 10,
+    rrfK: 60,
+    maxEvidenceBlocks: 6,
+    defaultEvidenceBlocks: 4,
+    maxEvidenceBlocksPerDocument: 2
+  }),
+
+  embedding: Object.freeze({
+    provider: 'gemini',
+    model: 'gemini-embedding-2',
+    dimensions: 384,
+    metric: 'cosine',
+    documentTaskType: 'RETRIEVAL_DOCUMENT',
+    queryTaskType: 'RETRIEVAL_QUERY'
+  }),
+
+  capacity: Object.freeze({
+    vectorizeFreeStoredDimensions: 5_000_000,
+    vectorizeTargetActiveChunks: 10_000,
+    vectorizeWarningRatio: 0.60,
+    vectorizeCautionRatio: 0.80,
+    vectorizeCriticalRatio: 0.90,
+    d1DatabaseLimitBytes: 500 * 1024 * 1024,
+    d1WarningBytes: 300 * 1024 * 1024,
+    d1CautionBytes: 400 * 1024 * 1024
+  }),
+
+  retention: Object.freeze({
+    syncJobDays: 90,
+    auditLogDays: 400
+  })
+});
+
+function vectorDimensionsForChunks(chunkCount) {
+  const count = Math.max(0, Number(chunkCount) || 0);
+  return count * RAG_CONFIG.embedding.dimensions;
+}
+
+function maxChunksWithinStoredDimensionLimit(limit = RAG_CONFIG.capacity.vectorizeFreeStoredDimensions) {
+  return Math.floor(limit / RAG_CONFIG.embedding.dimensions);
+}
+
+function vectorCapacityStatus(activeChunks) {
+  const used = vectorDimensionsForChunks(activeChunks);
+  const limit = RAG_CONFIG.capacity.vectorizeFreeStoredDimensions;
+  const ratio = limit ? used / limit : 1;
+
+  let level = 'normal';
+  if (ratio >= RAG_CONFIG.capacity.vectorizeCriticalRatio) level = 'critical';
+  else if (ratio >= RAG_CONFIG.capacity.vectorizeCautionRatio) level = 'caution';
+  else if (ratio >= RAG_CONFIG.capacity.vectorizeWarningRatio) level = 'warning';
+
+  return {
+    activeChunks: Math.max(0, Number(activeChunks) || 0),
+    dimensions: RAG_CONFIG.embedding.dimensions,
+    usedDimensions: used,
+    limitDimensions: limit,
+    ratio,
+    level
+  };
+}
+
+export {
+  RAG_CONFIG,
+  vectorDimensionsForChunks,
+  maxChunksWithinStoredDimensionLimit,
+  vectorCapacityStatus
+};
