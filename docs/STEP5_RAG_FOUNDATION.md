@@ -165,3 +165,49 @@ STEP5-7:
 STEP5-8:
 - FAQチャットUIを本番RAGへ切替
 - STEP4 KV一括検索を退役
+
+
+## STEP5-2 実装状況
+
+D1 database:
+- name: takasago-jhs-komu-ai-rag
+- binding: RAG_DB
+- migrations_dir: migrations
+
+Worker health:
+- GET /health/rag-db
+
+migration適用前の想定:
+```json
+{
+  "ok": true,
+  "ragDb": {
+    "configured": true,
+    "schemaReady": false,
+    "missingTables": ["categories","documents","chunks","audit_logs","sync_jobs","chunks_fts"]
+  }
+}
+```
+
+migration適用後の想定:
+```json
+{
+  "ok": true,
+  "ragDb": {
+    "configured": true,
+    "schemaReady": true,
+    "missingTables": []
+  }
+}
+```
+
+worker/package.json helper:
+- npm run migrate:list
+- npm run migrate:remote
+- npm run d1:tables
+
+Embedding provider decision:
+- Gemini API利用可
+- gemini-embedding-2
+- 384 dimensions
+- cosine
