@@ -119,6 +119,21 @@ export default {
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
     if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type','Access-Control-Max-Age':'86400','Vary':'Origin'}});
     if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'3.0.0'},200,origin || '*');
+    if (request.method === 'GET' && url.pathname === '/health/providers') {
+      return json({
+        ok:true,
+        providers:{
+          cerebras:Boolean(env.CEREBRAS_API_KEY),
+          groq:Boolean(env.GROQ_API_KEY),
+          gemini:Boolean(env.GEMINI_API_KEY)
+        },
+        models:{
+          cerebras:env.CEREBRAS_MODEL || 'gpt-oss-120b',
+          groq:env.GROQ_MODEL || 'openai/gpt-oss-20b',
+          gemini:env.GEMINI_MODEL || 'gemini-3.6-flash'
+        }
+      },200,origin || '*');
+    }
     if (request.method !== 'POST' || url.pathname !== '/api/generate') return json({ok:false,error:{code:'NOT_FOUND',message:'Not found'}},404,origin || '*');
 
     const len = Number(request.headers.get('Content-Length') || 0);
