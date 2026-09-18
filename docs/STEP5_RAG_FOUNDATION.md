@@ -348,3 +348,57 @@ GAS helpers:
 - cleanupRagSyntheticStep5
 
 sourceId prefix step5-test- のテスト資料だけhard cleanup可能。
+
+
+## STEP5-5 Hybrid Retrieval
+
+実装:
+- worker/rag-retrieval.mjs
+- POST /admin/rag/retrieval-test
+
+検索フロー:
+1. 質問をGemini Embedding 2 / 384 dimensionsへ変換
+2. Vectorize Top15
+3. D1 FTS5(trigram) Top15
+4. rankのみをRRF(k=60)で統合
+5. fused Top10
+6. D1 authoritative filter
+   - chunks.is_active=1
+   - documents.is_current=1
+   - documents.status=active
+   - approval_status=approved
+   - deleted_at IS NULL
+   - valid_from / valid_until が現在日付に有効
+7. 同一document + 同一headingの隣接chunkを結合
+8. documentあたり最大2 evidence blocks
+9. 通常4、最大6 evidence blocks
+10. evidence合計最大5,500 chars
+
+Vectorize similarity scoreとFTS bm25 raw scoreは直接加算しない。
+RRF:
+  score = 1/(60 + vectorRank) + 1/(60 + ftsRank)
+
+管理者テストでは以下を表示:
+- vectorRank / vectorScore
+- ftsRank / ftsScore
+- fusedRank / rrfScore
+- authoritative
+- exclusionReason
+- D1由来のsourceId / title / chunkNo
+
+FTS query:
+- NFKC normalize
+- punctuation除去
+- Unicode文字/数字の3文字gramを最大24個作成
+- OR query
+- FTS障害時もVector retrievalは継続
+
+重要:
+- STEP5-5時点ではminimum evidence thresholdは未確定。
+- 実資料の質問セットで分布を確認後に閾値を決定する。
+- 閾値決定前は先生向けFAQの旧KV検索を置き換えない。
+
+GAS verification:
+- testHybridRetrievalStep5
+- testHybridRetrievalParaphraseStep5
+- runHybridRetrievalSyntheticStep5
