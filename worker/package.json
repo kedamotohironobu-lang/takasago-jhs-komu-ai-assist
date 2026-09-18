@@ -2,6 +2,15 @@
   "name": "takasago-jhs-komu-ai-assist-api",
   "private": true,
   "type": "module",
-  "scripts": {"check":"node --check worker.mjs","test":"node test.mjs","deploy":"wrangler deploy"},
-  "devDependencies": {"wrangler":"^4.0.0"}
+  "scripts": {
+    "check": "node --check worker.mjs",
+    "test": "node test.mjs",
+    "deploy": "wrangler deploy",
+    "migrate:list": "wrangler d1 migrations list takasago-jhs-komu-ai-rag --remote",
+    "migrate:remote": "wrangler d1 migrations apply takasago-jhs-komu-ai-rag --remote",
+    "d1:tables": "wrangler d1 execute takasago-jhs-komu-ai-rag --remote --command \"SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY name\""
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
 }
