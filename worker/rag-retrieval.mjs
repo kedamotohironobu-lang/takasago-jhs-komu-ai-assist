@@ -34,7 +34,7 @@ function unique(items) {
 
 function buildFtsQuery(input) {
   const q = cleanQuery(input, 500)
-    .replace(/[「」『』【】（）()［\][\]{}〈〉《》、。,.!?！？:：;；/\\|・…―—–~〜"']/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -288,8 +288,8 @@ function buildEvidence(candidates, requestedLimit) {
       }
       mergeTarget.chunkIds.push(item.chunkId);
       mergeTarget.rrfScore = Math.max(mergeTarget.rrfScore, item.rrfScore);
-      mergeTarget.vectorRanks.push(item.vectorRank).filter(Boolean);
-      mergeTarget.ftsRanks.push(item.ftsRank).filter(Boolean);
+      if (item.vectorRank) mergeTarget.vectorRanks.push(item.vectorRank);
+      if (item.ftsRank) mergeTarget.ftsRanks.push(item.ftsRank);
       continue;
     }
 
