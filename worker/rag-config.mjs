@@ -29,8 +29,8 @@ const RAG_CONFIG = Object.freeze({
     model: 'gemini-embedding-2',
     dimensions: 384,
     metric: 'cosine',
-    documentTaskType: 'RETRIEVAL_DOCUMENT',
-    queryTaskType: 'RETRIEVAL_QUERY'
+    documentFormat: 'title: {title} | text: {content}',
+    queryFormat: 'task: question answering | query: {content}'
   }),
 
   capacity: Object.freeze({
