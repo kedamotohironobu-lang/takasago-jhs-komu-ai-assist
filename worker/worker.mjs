@@ -107,11 +107,12 @@ function inputHasExplicitYear(input) {
   return /(?:19|20)\d{2}\s*年/.test(String(input || ''));
 }
 
-function sanitizeOutput(text, input) {
+function sanitizeOutput(text, input, toolId) {
   let out = String(text || '').trim();
+  const source = String(input || '');
 
   // 年が入力されていない場合、AIが勝手に付けた曜日を機械的に除去する。
-  if (!inputHasExplicitYear(input)) {
+  if (!inputHasExplicitYear(source)) {
     out = out.replace(/(\d{1,2}\s*月\s*\d{1,2}\s*日)\s*[（(][月火水木金土日]曜?[日]?[）)]/g, '$1');
   }
 
@@ -119,6 +120,32 @@ function sanitizeOutput(text, input) {
   out = out.replace(/・所\s*所\s*[：:]/g, '・場　所：');
   out = out.replace(/・日\s*時\s*[：:]/g, '・日　時：');
   out = out.replace(/・持\s*ち物\s*[：:]/g, '・持ち物：');
+
+  // 保護者連絡文：入力で場所が「未定」と明示されていないのに
+  // 「場所は未定」とAIが断定した場合は、要確認へ機械的に戻す。
+  if (toolId === 'parent') {
+    const placeExplicitlyUndecided =
+      /(場所|会場|集合場所|開催場所)[^\n。]{0,12}(未定|未確定|未決定)/.test(source) ||
+      /(未定|未確定|未決定)[^\n。]{0,12}(場所|会場|集合場所|開催場所)/.test(source);
+
+    if (!placeExplicitlyUndecided) {
+      out = out
+        .replace(/【場所】\s*[（(]?場所(?:は|：|:)\s*(?:未定|未確定|未決定)[）)]?/g, '【場所】【要確認：開催場所】')
+        .replace(/【場所】\s*[（(](?:場所の詳細は)?(?:未定|未確定|未決定)(?:です)?[。．]?[）)]/g, '【場所】【要確認：開催場所】')
+        .replace(/(?:・)?場所\s*[：:]\s*[（(]?(?:場所(?:は|：|:)\s*)?(?:未定|未確定|未決定)[）)]?/g, '・場所：【要確認：開催場所】');
+    }
+
+    // 開催場所が要確認なのに「確認事項 なし」となった場合の不整合を補正。
+    if (out.includes('【要確認：開催場所】')) {
+      out = out
+        .replace(/確認事項\s*\n\s*(?:・|-)?\s*なし\s*$/m, '確認事項\n・開催場所【要確認：開催場所】')
+        .replace(/確認事項\s*[：:]?\s*なし/g, '確認事項\n・開催場所【要確認：開催場所】');
+
+      if (!/確認事項[\s\S]*開催場所/.test(out)) {
+        out += '\n\n確認事項\n・開催場所【要確認：開催場所】';
+      }
+    }
+  }
 
   return out;
 }
@@ -172,7 +199,7 @@ export default {
     const requestId = crypto.randomUUID();
     try {
       const result = await generateWithFallback(env, buildMessages(valid));
-      const sanitized = sanitizeOutput(result.text, valid.input);
+      const sanitized = sanitizeOutput(result.text, valid.input, valid.toolId);
       return json({ok:true,text:sanitized,provider:result.provider,model:result.model,requestId},200,origin || '*');
     } catch (e) {
       console.error(JSON.stringify({requestId,code:e?.code || 'AI_ERROR',failures:e?.failures || []}));
