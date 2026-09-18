@@ -1,4 +1,4 @@
-name = "takasago-jhs-komu-ai-assist-api"
+name = "takasago-jhs-komu-ai-assist"
 main = "worker.mjs"
 compatibility_date = "2026-09-18"
 
