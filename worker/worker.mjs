@@ -1,4 +1,5 @@
 import { faqStatus, listFaqSources, retrieveFaq, buildFaqContext, upsertFaqSource, removeFaqSource } from './faq-rag.mjs';
+import { RAG_CONFIG } from './rag-config.mjs';
 
 const COMMON_SYSTEM_PROMPT = `あなたは中学校教職員の校務を支援する文章作成アシスタントです。日本語で、明確で丁寧な、すぐに編集して使える案を作ります。
 提供された事実と提案を区別してください。氏名・役職・組織名・日付・時刻・金額・期限・連絡先を推測して補わないでください。未記載の必要事項は【要確認：項目名】としてください。年が示されていない日付には曜日を付けないでください。入力にない場所・連絡方法・締切・担当者等を「未定」と断定せず、【要確認：項目名】として扱ってください。相対日付を勝手に絶対日付へ変換しないでください。
@@ -190,6 +191,21 @@ async function generateWithFallback(env, messages) {
   throw Object.assign(new Error('All providers failed'), { code:'ALL_PROVIDERS_FAILED', status:503, failures });
 }
 
+function ragVectorStatus(env) {
+  const vectorConfigured = Boolean(env?.RAG_VECTOR && typeof env.RAG_VECTOR.query === 'function');
+  const geminiConfigured = Boolean(String(env?.GEMINI_API_KEY || '').trim());
+
+  return {
+    configured:vectorConfigured && geminiConfigured,
+    vectorBinding:vectorConfigured,
+    geminiEmbedding:geminiConfigured,
+    model:RAG_CONFIG.embedding.model,
+    dimensions:RAG_CONFIG.embedding.dimensions,
+    metric:RAG_CONFIG.embedding.metric,
+    indexName:'takasago-jhs-komu-rag-v1'
+  };
+}
+
 async function ragDbStatus(env) {
   if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
     return { configured:false, schemaReady:false, missingTables:['categories','documents','chunks','audit_logs','sync_jobs','chunks_fts'] };
@@ -223,7 +239,7 @@ export default {
     const origin = pickCorsOrigin(request, env);
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
     if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token','Access-Control-Max-Age':'86400','Vary':'Origin'}});
-    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.0.0'},200,origin || '*');
+    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.1.0'},200,origin || '*');
     if (request.method === 'GET' && url.pathname === '/health/providers') {
       return json({
         ok:true,
@@ -246,6 +262,9 @@ export default {
     if (request.method === 'GET' && url.pathname === '/health/rag-db') {
       const status = await ragDbStatus(env);
       return json({ok:true,ragDb:status},200,origin || '*');
+    }
+    if (request.method === 'GET' && url.pathname === '/health/rag-vector') {
+      return json({ok:true,ragVector:ragVectorStatus(env)},200,origin || '*');
     }
 
     if (request.method === 'GET' && url.pathname === '/admin/faq/sources') {
