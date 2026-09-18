@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>校内FAQ 資料登録ツール</title>
+  <style>
+    :root{
+      font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;
+      color:#173126;background:#f4f7f5;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:#f4f7f5}
+    header{background:#145c43;color:#fff;padding:22px 26px}
+    header h1{margin:0;font-size:24px}
+    header p{margin:7px 0 0;opacity:.9}
+    main{max-width:1180px;margin:24px auto;padding:0 18px 48px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .card{background:#fff;border:1px solid #dce6e1;border-radius:14px;padding:18px;box-shadow:0 4px 16px rgba(0,0,0,.04)}
+    h2{font-size:18px;margin:0 0 14px}
+    .status-row{display:flex;gap:10px;flex-wrap:wrap}
+    .badge{padding:6px 10px;border-radius:999px;background:#eaf3ef;font-size:13px}
+    .ok{background:#e5f5ea;color:#176434}.warn{background:#fff1d6;color:#7a5200}.bad{background:#fde7e7;color:#8b1e1e}
+    label{display:block;font-weight:700;font-size:13px;margin:10px 0 5px}
+    input,textarea{width:100%;border:1px solid #cfdad5;border-radius:9px;padding:10px;font:inherit;background:#fff}
+    input[type="checkbox"]{width:auto}
+    button{border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer}
+    button.primary{background:#145c43;color:#fff}
+    button.secondary{background:#eaf3ef;color:#145c43}
+    button.danger{background:#fde7e7;color:#8b1e1e}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .table-wrap{overflow:auto;margin-top:12px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:9px 8px;border-bottom:1px solid #e5ece8;text-align:left;vertical-align:top}
+    th{background:#f7faf8;white-space:nowrap}
+    .small{font-size:12px;color:#63766d}
+    .selected{outline:2px solid #2b8865}
+    .preview{white-space:pre-wrap;background:#f7faf8;border-radius:9px;padding:12px;max-height:260px;overflow:auto;font-size:13px}
+    .full{grid-column:1/-1}
+    .toast{position:fixed;right:18px;bottom:18px;background:#173126;color:#fff;padding:12px 16px;border-radius:10px;display:none;max-width:420px}
+    .loading{opacity:.65;pointer-events:none}
+    a{color:#145c43}
+    @media(max-width:800px){.grid{grid-template-columns:1fr}.full{grid-column:auto}}
+  </style>
+</head>
+<body>
+<header>
+  <h1>校内FAQ 資料登録ツール</h1>
+  <p>Google Driveの承認済み資料を、校内FAQのRAGへ登録します。</p>
+</header>
+
+<main id="app">
+  <div class="grid">
+    <section class="card">
+      <h2>① 接続状態</h2>
+      <div id="statusBadges" class="status-row"></div>
+      <p class="small" id="statusDetail"></p>
+      <div class="actions">
+        <button class="secondary" onclick="reloadAll()">状態を更新</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>② Google Driveフォルダ</h2>
+      <label for="folderId">FAQ資料フォルダID</label>
+      <input id="folderId" placeholder="Google DriveフォルダID">
+      <div class="actions">
+        <button class="primary" onclick="saveFolder()">フォルダを設定</button>
+      </div>
+      <p class="small">このフォルダ直下の資料だけを一覧表示します。実資料を入れる前に、管理者だけがアクセスできるフォルダを指定してください。</p>
+    </section>
+
+    <section class="card full">
+      <h2>③ Drive資料一覧</h2>
+      <div class="actions">
+        <button class="secondary" onclick="loadDriveFiles()">一覧を再読込</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>資料名</th><th>形式</th><th>更新</th><th>対応</th><th>操作</th></tr></thead>
+          <tbody id="driveRows"><tr><td colspan="5">読み込み待ちです。</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" id="registerCard">
+      <h2>④ 選択資料を確認・登録</h2>
+      <p id="selectedName" class="small">資料を選択してください。</p>
+
+      <label for="owner">管理担当</label>
+      <input id="owner" placeholder="例）教務部">
+
+      <label for="version">版・年度</label>
+      <input id="version" placeholder="例）2026年度版">
+
+      <div class="grid" style="grid-template-columns:1fr 1fr">
+        <div>
+          <label for="validFrom">有効開始日</label>
+          <input id="validFrom" type="date">
+        </div>
+        <div>
+          <label for="validUntil">有効終了日</label>
+          <input id="validUntil" type="date">
+        </div>
+      </div>
+
+      <label>
+        <input id="approved" type="checkbox">
+        この資料が承認済みで、FAQの根拠として使えることを確認しました
+      </label>
+
+      <div class="actions">
+        <button class="secondary" id="previewBtn" onclick="previewSelected()" disabled>本文をプレビュー</button>
+        <button class="primary" id="registerBtn" onclick="registerSelected()" disabled>RAGへ登録</button>
+      </div>
+
+      <div id="previewBox" class="preview" style="display:none;margin-top:12px"></div>
+    </section>
+
+    <section class="card">
+      <h2>⑤ RAG登録済み資料</h2>
+      <div class="actions">
+        <button class="secondary" onclick="loadRegistered()">登録一覧を再読込</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>資料名</th><th>状態</th><th>版</th><th>操作</th></tr></thead>
+          <tbody id="registeredRows"><tr><td colspan="4">読み込み待ちです。</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+  const state = { selectedFile:null, appState:null };
+
+  function gs(name, ...args){
+    return new Promise((resolve,reject)=>{
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(err=>reject(new Error(err && err.message ? err.message : String(err))))
+        [name](...args);
+    });
+  }
+
+  function toast(message){
+    const el=document.getElementById('toast');
+    el.textContent=message; el.style.display='block';
+    clearTimeout(window.__toastTimer);
+    window.__toastTimer=setTimeout(()=>el.style.display='none',3500);
+  }
+
+  function busy(on){
+    document.getElementById('app').classList.toggle('loading',on);
+  }
+
+  async function reloadAll(){
+    busy(true);
+    try{
+      const s=await gs('getAppState');
+      state.appState=s;
+      renderStatus(s);
+      if(s.folderId) document.getElementById('folderId').value=s.folderId;
+      await Promise.allSettled([loadDriveFiles(false),loadRegistered(false)]);
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
+  }
+
+  function renderStatus(s){
+    const badges=[];
+    badges.push('<span class="badge '+(s.hasAdminToken?'ok':'bad')+'">管理Token '+(s.hasAdminToken?'設定済み':'未設定')+'</span>');
+    const faqConfigured=Boolean(s.faq && s.faq.faq && s.faq.faq.configured);
+    badges.push('<span class="badge '+(faqConfigured?'ok':'bad')+'">KV '+(faqConfigured?'接続済み':'未接続')+'</span>');
+    badges.push('<span class="badge '+(s.folderName?'ok':'warn')+'">Drive '+(s.folderName?'接続済み':'未設定')+'</span>');
+    document.getElementById('statusBadges').innerHTML=badges.join('');
+    const faq=s.faq && s.faq.faq ? s.faq.faq : {};
+    document.getElementById('statusDetail').textContent =
+      'Drive: '+(s.folderName||s.folderError||'未設定')+
+      ' ／ RAG資料: '+(faq.sourceCount ?? '-')+
+      '件 ／ 有効: '+(faq.activeSourceCount ?? '-')+'件';
+  }
+
+  async function saveFolder(){
+    const id=document.getElementById('folderId').value.trim();
+    if(!id){toast('フォルダIDを入力してください。');return}
+    busy(true);
+    try{
+      const r=await gs('saveFolderId',id);
+      toast('フォルダを設定しました：'+r.folderName);
+      await reloadAll();
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
+  }
+
+  async function loadDriveFiles(showBusy=true){
+    if(showBusy) busy(true);
+    try{
+      const files=await gs('getDriveFiles');
+      const tbody=document.getElementById('driveRows');
+      if(!files.length){
+        tbody.innerHTML='<tr><td colspan="5">フォルダ内に資料がありません。</td></tr>';
+        return;
+      }
+      tbody.innerHTML=files.map(f=>{
+        const status=f.supported
+          ? '<span class="badge ok">対応</span>'
+          : '<span class="badge warn">未対応</span><div class="small">'+escapeHtml(f.note)+'</div>';
+        return '<tr>'+
+          '<td><strong>'+escapeHtml(f.name)+'</strong><div class="small">'+escapeHtml(f.mimeType)+'</div></td>'+
+          '<td>'+escapeHtml(f.kind)+'</td>'+
+          '<td>'+escapeHtml(f.updatedAt)+'</td>'+
+          '<td>'+status+'</td>'+
+          '<td><button class="secondary" '+(f.supported?'':'disabled')+' onclick=\'selectFile('+JSON.stringify(JSON.stringify(f))+')\'>選択</button></td>'+
+        '</tr>';
+      }).join('');
+    }catch(e){
+      document.getElementById('driveRows').innerHTML='<tr><td colspan="5">'+escapeHtml(e.message)+'</td></tr>';
+    }finally{if(showBusy) busy(false)}
+  }
+
+  function selectFile(json){
+    const f=JSON.parse(json);
+    state.selectedFile=f;
+    document.getElementById('selectedName').textContent='選択中：'+f.name;
+    document.getElementById('previewBtn').disabled=false;
+    document.getElementById('registerBtn').disabled=false;
+    document.getElementById('previewBox').style.display='none';
+  }
+
+  async function previewSelected(){
+    if(!state.selectedFile)return;
+    busy(true);
+    try{
+      const r=await gs('previewDriveFile',state.selectedFile.id);
+      const box=document.getElementById('previewBox');
+      box.style.display='block';
+      box.textContent=r.preview+(r.truncated?'\n\n…プレビューは先頭6,000文字までです。':'');
+      toast('本文を取得しました（'+r.chars+'文字）');
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
+  }
+
+  async function registerSelected(){
+    if(!state.selectedFile){toast('資料を選択してください。');return}
+    if(!document.getElementById('approved').checked){
+      toast('承認済み資料であることを確認してください。');return;
+    }
+    const options={
+      fileId:state.selectedFile.id,
+      owner:document.getElementById('owner').value.trim(),
+      version:document.getElementById('version').value.trim(),
+      validFrom:document.getElementById('validFrom').value,
+      validUntil:document.getElementById('validUntil').value,
+      approved:true
+    };
+    busy(true);
+    try{
+      const r=await gs('registerDriveFile',options);
+      toast('RAGへ登録しました：'+r.title);
+      document.getElementById('approved').checked=false;
+      await Promise.all([loadRegistered(false),reloadStatusOnly()]);
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
+  }
+
+  async function loadRegistered(showBusy=true){
+    if(showBusy) busy(true);
+    try{
+      const r=await gs('listRegisteredSources');
+      const rows=r.sources||[];
+      const tbody=document.getElementById('registeredRows');
+      if(!rows.length){
+        tbody.innerHTML='<tr><td colspan="4">登録資料はありません。</td></tr>';
+        return;
+      }
+      tbody.innerHTML=rows.map(s=>
+        '<tr>'+
+          '<td><strong>'+escapeHtml(s.title)+'</strong><div class="small">'+escapeHtml(s.sourceId)+'</div></td>'+
+          '<td><span class="badge '+(s.active?'ok':'warn')+'">'+(s.active?'有効':'非アクティブ')+'</span></td>'+
+          '<td>'+escapeHtml(s.version||'-')+'</td>'+
+          '<td><button class="danger" onclick=\'removeSource('+JSON.stringify(s.sourceId)+')\'>削除</button></td>'+
+        '</tr>'
+      ).join('');
+    }catch(e){
+      document.getElementById('registeredRows').innerHTML='<tr><td colspan="4">'+escapeHtml(e.message)+'</td></tr>';
+    }finally{if(showBusy) busy(false)}
+  }
+
+  async function removeSource(sourceId){
+    if(!confirm('この資料をRAGから削除しますか？'))return;
+    busy(true);
+    try{
+      await gs('removeRegisteredSource',sourceId);
+      toast('RAGから削除しました。');
+      await Promise.all([loadRegistered(false),reloadStatusOnly()]);
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
+  }
+
+  async function reloadStatusOnly(){
+    try{
+      const s=await gs('getAppState');
+      state.appState=s; renderStatus(s);
+    }catch(e){}
+  }
+
+  function escapeHtml(value){
+    return String(value??'').replace(/[&<>"']/g,c=>({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  window.addEventListener('load',reloadAll);
+</script>
+</body>
+</html>
