@@ -1,4 +1,4 @@
-import { faqStatus, retrieveFaq, buildFaqContext, upsertFaqSource, removeFaqSource } from './faq-rag.mjs';
+import { faqStatus, listFaqSources, retrieveFaq, buildFaqContext, upsertFaqSource, removeFaqSource } from './faq-rag.mjs';
 
 const COMMON_SYSTEM_PROMPT = `あなたは中学校教職員の校務を支援する文章作成アシスタントです。日本語で、明確で丁寧な、すぐに編集して使える案を作ります。
 提供された事実と提案を区別してください。氏名・役職・組織名・日付・時刻・金額・期限・連絡先を推測して補わないでください。未記載の必要事項は【要確認：項目名】としてください。年が示されていない日付には曜日を付けないでください。入力にない場所・連絡方法・締切・担当者等を「未定」と断定せず、【要確認：項目名】として扱ってください。相対日付を勝手に絶対日付へ変換しないでください。
@@ -215,6 +215,13 @@ export default {
     if (request.method === 'GET' && url.pathname === '/health/faq') {
       const status = await faqStatus(env);
       return json({ok:true,faq:status},200,origin || '*');
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/faq/sources') {
+      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      const result = await listFaqSources(env);
+      if (!result.configured) return json({ok:false,error:{code:'FAQ_KV_NOT_CONFIGURED',message:'FAQ_KV が設定されていません。'}},503,origin || '*');
+      return json({ok:true,result},200,origin || '*');
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/faq/source') {
