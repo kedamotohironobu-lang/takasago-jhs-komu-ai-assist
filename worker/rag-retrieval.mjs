@@ -255,6 +255,56 @@ function mergeText(left, right) {
   return overlap ? left + right.slice(overlap) : left + '\n\n' + right;
 }
 
+function applyEvidenceGate(candidates) {
+  const gate = RAG_CONFIG.retrieval.gate;
+  const vectorOrdered = candidates
+    .filter(x => x.authoritative && Number.isFinite(Number(x.vectorScore)))
+    .sort((a,b) => Number(a.vectorRank || 9999) - Number(b.vectorRank || 9999));
+
+  const topVectorScore = Number(vectorOrdered[0]?.vectorScore || 0);
+  const secondVectorScore = Number(vectorOrdered[1]?.vectorScore || 0);
+  const vectorLead = Math.max(0, topVectorScore - secondVectorScore);
+
+  return candidates.map(item => {
+    if (!item.authoritative) {
+      return {
+        ...item,
+        accepted:false,
+        gateReason:item.exclusionReason || 'not_authoritative'
+      };
+    }
+
+    const vectorScore = Number(item.vectorScore || 0);
+    const vectorRank = Number(item.vectorRank || 0);
+    const ftsRank = Number(item.ftsRank || 0);
+
+    const hybridAccepted =
+      Boolean(vectorRank) &&
+      Boolean(ftsRank) &&
+      vectorScore >= gate.hybridMinVectorScore &&
+      vectorRank <= gate.hybridMaxVectorRank &&
+      ftsRank <= gate.hybridMaxFtsRank;
+
+    const vectorOnlyAccepted =
+      vectorRank === 1 &&
+      !ftsRank &&
+      vectorScore >= gate.vectorOnlyMinScore &&
+      vectorLead >= gate.vectorOnlyMinLead;
+
+    let gateReason = 'below_threshold';
+    if (hybridAccepted) gateReason = 'hybrid_agreement';
+    else if (vectorOnlyAccepted) gateReason = 'strong_vector_only';
+    else if (!vectorRank && ftsRank) gateReason = 'fts_only_not_sufficient';
+    else if (vectorRank && !ftsRank) gateReason = 'vector_only_below_threshold';
+
+    return {
+      ...item,
+      accepted:hybridAccepted || vectorOnlyAccepted,
+      gateReason
+    };
+  });
+}
+
 function buildEvidence(candidates, requestedLimit) {
   const max = Math.max(
     1,
@@ -264,7 +314,7 @@ function buildEvidence(candidates, requestedLimit) {
     )
   );
 
-  const valid = candidates.filter(x => x.authoritative);
+  const valid = candidates.filter(x => x.authoritative && x.accepted);
   const blocks = [];
 
   for (const item of valid) {
@@ -353,7 +403,8 @@ async function hybridRetrieve(env, rawQuery, options = {}) {
   ]);
 
   const fused = reciprocalRankFuse(vectorMatches, fts.matches);
-  const candidates = await loadAuthoritativeCandidates(env, fused);
+  const authoritativeCandidates = await loadAuthoritativeCandidates(env, fused);
+  const candidates = applyEvidenceGate(authoritativeCandidates);
   const evidence = buildEvidence(candidates, options.evidenceLimit);
 
   return {
@@ -376,6 +427,10 @@ async function hybridRetrieve(env, rawQuery, options = {}) {
       ftsError:fts.error || '',
       vectorMatches,
       ftsMatches:fts.matches,
+      gate:{
+        thresholds:RAG_CONFIG.retrieval.gate,
+        acceptedCount:candidates.filter(x => x.accepted).length
+      },
       fusedCandidates:candidates.map(x => ({
         fusedRank:x.fusedRank,
         chunkId:x.chunkId,
@@ -386,6 +441,8 @@ async function hybridRetrieve(env, rawQuery, options = {}) {
         rrfScore:x.rrfScore,
         authoritative:Boolean(x.authoritative),
         exclusionReason:x.exclusionReason || '',
+        accepted:Boolean(x.accepted),
+        gateReason:x.gateReason || '',
         documentId:x.documentId || '',
         sourceId:x.sourceId || '',
         title:x.title || '',
@@ -393,7 +450,8 @@ async function hybridRetrieve(env, rawQuery, options = {}) {
       }))
     },
     evidence,
-    hasEvidence:evidence.length > 0
+    hasEvidence:evidence.length > 0,
+    hasUsableEvidence:evidence.length > 0
   };
 }
 
@@ -401,6 +459,7 @@ export {
   cleanQuery,
   buildFtsQuery,
   reciprocalRankFuse,
+  applyEvidenceGate,
   buildEvidence,
   hybridRetrieve
 };
