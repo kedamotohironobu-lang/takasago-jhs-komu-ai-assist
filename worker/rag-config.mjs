@@ -1,6 +1,6 @@
 // STEP5 production RAG constants.
-// This file is not wired into the live Worker yet.
-// Values are intentionally centralized before the D1/Vectorize cutover.
+// Central production RAG constants.
+// STEP5-6 gate values are provisional and must be recalibrated on real data.
 
 const RAG_CONFIG = Object.freeze({
   schemaVersion: 1,
@@ -20,7 +20,17 @@ const RAG_CONFIG = Object.freeze({
     rrfK: 60,
     maxEvidenceBlocks: 6,
     defaultEvidenceBlocks: 4,
-    maxEvidenceBlocksPerDocument: 2
+    maxEvidenceBlocksPerDocument: 2,
+
+    // STEP5-6 provisional evidence gate.
+    // Calibrate again after a real-school question set is available.
+    gate: Object.freeze({
+      hybridMinVectorScore: 0.65,
+      hybridMaxVectorRank: 5,
+      hybridMaxFtsRank: 3,
+      vectorOnlyMinScore: 0.78,
+      vectorOnlyMinLead: 0.05
+    })
   }),
 
   embedding: Object.freeze({
