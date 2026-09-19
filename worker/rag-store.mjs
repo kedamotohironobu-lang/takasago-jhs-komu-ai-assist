@@ -469,10 +469,30 @@ async function finalizeRagDocument(env, documentId, actorId = 'faq-admin') {
   `).bind(documentId).all();
   const sampleIds = (sampleRows?.results || []).map(r => r.vector_id).filter(Boolean);
   const fetched = sampleIds.length ? await vector.getByIds(sampleIds) : [];
-  const fetchedIds = new Set((Array.isArray(fetched) ? fetched : []).map(v => v?.id));
+  const fetchedList = Array.isArray(fetched) ? fetched : [];
+  const fetchedIds = new Set(fetchedList.map(v => v?.id));
   const missingSamples = sampleIds.filter(id => !fetchedIds.has(id));
   if (missingSamples.length) {
     throw fail('VECTOR_NOT_READY', 'Vectorizeへの反映待ちです。数秒待ってからもう一度実行してください。', 409, { missingSamples });
+  }
+
+  // getByIdsで取得できても、近傍検索用indexへの反映が少し遅れる場合がある。
+  // finalize前に実際のqueryを1回行い、検索可能になったことまで確認する。
+  if (fetchedList.length && Array.isArray(fetchedList[0]?.values) && fetchedList[0].values.length) {
+    const queryProbe = await vector.query(fetchedList[0].values, {
+      topK:Math.min(3, sampleIds.length || 1),
+      returnValues:false,
+      returnMetadata:'none'
+    });
+    const queryMatches = Array.isArray(queryProbe?.matches) ? queryProbe.matches : [];
+    const queryable = queryMatches.some(m => sampleIds.includes(String(m?.id || '')));
+    if (!queryable) {
+      throw fail(
+        'VECTOR_NOT_QUERYABLE_YET',
+        'Vectorizeへの反映待ちです。ベクトルは保存済みですが、意味検索への反映を待っています。数秒待ってからもう一度実行してください。',
+        409
+      );
+    }
   }
 
   const previous = await queryOne(db, `
