@@ -639,7 +639,21 @@ function runHybridRetrievalSyntheticStep5() {
     );
   }
 
-  const retrieval = testHybridRetrievalStep5();
+  const retrieval = waitHybridRetrievalVectorStep5_();
+
+  const vectorMatches =
+    retrieval &&
+    retrieval.result &&
+    retrieval.result.diagnostics &&
+    Array.isArray(retrieval.result.diagnostics.vectorMatches)
+      ? retrieval.result.diagnostics.vectorMatches
+      : [];
+
+  if (!vectorMatches.length) {
+    throw new Error(
+      'FTS5検索は成功しましたが、Vectorizeの意味検索がまだ反映されていません。少し待って testHybridRetrievalStep5() を再実行してください。'
+    );
+  }
 
   const result = {
     ok: true,
@@ -651,4 +665,30 @@ function runHybridRetrievalSyntheticStep5() {
 
   console.log(JSON.stringify(result, null, 2));
   return result;
+}
+
+
+function waitHybridRetrievalVectorStep5_() {
+  let last = null;
+
+  for (let i = 0; i < 6; i++) {
+    const result = testHybridRetrievalStep5();
+    last = result;
+
+    const matches =
+      result &&
+      result.result &&
+      result.result.diagnostics &&
+      Array.isArray(result.result.diagnostics.vectorMatches)
+        ? result.result.diagnostics.vectorMatches
+        : [];
+
+    if (matches.length > 0) {
+      return result;
+    }
+
+    Utilities.sleep(5000);
+  }
+
+  return last;
 }
