@@ -692,3 +692,17 @@ function waitHybridRetrievalVectorStep5_() {
 
   return last;
 }
+
+
+/**
+ * STEP5-5: 無関係質問で誤ヒットしないか確認します。
+ * STEP5-6のevidence threshold設計用。
+ */
+function testHybridRetrievalNegativeStep5() {
+  const result = workerRequest_('/admin/rag/retrieval-test', 'post', {
+    query: '修学旅行の集合時間は何時ですか？',
+    evidenceLimit: 4
+  }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
