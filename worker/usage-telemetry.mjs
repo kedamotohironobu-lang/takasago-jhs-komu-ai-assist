@@ -301,6 +301,307 @@ async function getUsageSummary(env, days = 30) {
   };
 }
 
+async function getImprovementCandidates(env, days = 30) {
+  const db = requireDb(env);
+  await ensureOperationalSchema(env);
+
+  const safeDays = Math.max(7, Math.min(180, Number(days) || 30));
+  const modifier = '-' + safeDays + ' days';
+
+  const [documentMetrics, expiringRows, statusRows, faqTotals] = await Promise.all([
+    db.prepare(`
+      SELECT
+        d.document_id,
+        d.source_id,
+        d.title,
+        d.category_id,
+        c.name AS category_name,
+        d.source_type,
+        d.valid_until,
+        d.last_synced_at,
+        d.created_at,
+        d.updated_at,
+        COUNT(DISTINCT ue.event_id) AS use_count,
+        COUNT(DISTINCT CASE WHEN fe.rating='helpful' THEN fe.request_id END) AS helpful_count,
+        COUNT(DISTINCT CASE WHEN fe.rating='needs_improvement' THEN fe.request_id END) AS negative_count,
+        COUNT(DISTINCT CASE WHEN fe.reason_code='wrong_source' THEN fe.request_id END) AS wrong_source_count,
+        COUNT(DISTINCT CASE WHEN fe.reason_code='answer_incomplete' THEN fe.request_id END) AS incomplete_count,
+        COUNT(DISTINCT CASE WHEN fe.reason_code='hard_to_understand' THEN fe.request_id END) AS hard_to_understand_count,
+        COUNT(DISTINCT CASE WHEN fe.reason_code='outdated' THEN fe.request_id END) AS outdated_count,
+        MAX(ue.occurred_at) AS last_used_at
+      FROM documents d
+      LEFT JOIN categories c ON c.category_id=d.category_id
+      LEFT JOIN usage_sources us ON us.document_id=d.document_id
+      LEFT JOIN usage_events ue
+        ON ue.event_id=us.event_id
+       AND datetime(ue.occurred_at) >= datetime('now',?)
+      LEFT JOIN feedback_events fe
+        ON fe.request_id=ue.request_id
+       AND datetime(fe.occurred_at) >= datetime('now',?)
+      WHERE d.is_current=1
+        AND d.status='active'
+        AND d.approval_status='approved'
+        AND d.deleted_at IS NULL
+        AND d.source_id NOT LIKE 'step5-test-%'
+        AND (d.valid_from IS NULL OR TRIM(d.valid_from)='' OR date(d.valid_from) <= date('now','+9 hours'))
+        AND (d.valid_until IS NULL OR TRIM(d.valid_until)='' OR date(d.valid_until) >= date('now','+9 hours'))
+      GROUP BY
+        d.document_id,d.source_id,d.title,d.category_id,c.name,d.source_type,
+        d.valid_until,d.last_synced_at,d.created_at,d.updated_at
+      ORDER BY d.title
+    `).bind(modifier,modifier).all(),
+
+    db.prepare(`
+      SELECT
+        d.document_id,d.source_id,d.title,d.valid_until,
+        d.category_id,c.name AS category_name
+      FROM documents d
+      LEFT JOIN categories c ON c.category_id=d.category_id
+      WHERE d.is_current=1
+        AND d.status='active'
+        AND d.approval_status='approved'
+        AND d.deleted_at IS NULL
+        AND d.source_id NOT LIKE 'step5-test-%'
+        AND d.valid_until IS NOT NULL
+        AND TRIM(d.valid_until)<>''
+        AND date(d.valid_until) BETWEEN
+          date('now','+9 hours')
+          AND date('now','+9 hours','+30 days')
+      ORDER BY date(d.valid_until),d.title
+      LIMIT 100
+    `).all(),
+
+    db.prepare(`
+      SELECT
+        d.document_id,d.source_id,d.title,d.status,d.category_id,
+        c.name AS category_name,d.updated_at
+      FROM documents d
+      LEFT JOIN categories c ON c.category_id=d.category_id
+      WHERE d.is_current=1
+        AND d.deleted_at IS NULL
+        AND d.source_id NOT LIKE 'step5-test-%'
+        AND d.status IN ('error','source_missing','expired')
+      ORDER BY
+        CASE d.status
+          WHEN 'error' THEN 1
+          WHEN 'source_missing' THEN 2
+          ELSE 3
+        END,
+        d.updated_at DESC
+      LIMIT 100
+    `).all(),
+
+    db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN status='insufficient' THEN 1 ELSE 0 END) AS insufficient
+      FROM usage_events
+      WHERE tool_id='faq'
+        AND datetime(occurred_at) >= datetime('now',?)
+    `).bind(modifier).first()
+  ]);
+
+  const docs = (documentMetrics?.results || []).map(row => {
+    const useCount = Number(row.use_count || 0);
+    const helpfulCount = Number(row.helpful_count || 0);
+    const negativeCount = Number(row.negative_count || 0);
+    const feedbackCount = helpfulCount + negativeCount;
+    return {
+      documentId:String(row.document_id || ''),
+      sourceId:String(row.source_id || ''),
+      title:String(row.title || ''),
+      categoryId:String(row.category_id || ''),
+      categoryName:String(row.category_name || ''),
+      sourceType:String(row.source_type || ''),
+      validUntil:String(row.valid_until || ''),
+      lastSyncedAt:String(row.last_synced_at || ''),
+      createdAt:String(row.created_at || ''),
+      updatedAt:String(row.updated_at || ''),
+      lastUsedAt:String(row.last_used_at || ''),
+      useCount,
+      helpfulCount,
+      negativeCount,
+      feedbackCount,
+      negativeRate:feedbackCount ? negativeCount / feedbackCount : 0,
+      reasons:{
+        wrongSource:Number(row.wrong_source_count || 0),
+        incomplete:Number(row.incomplete_count || 0),
+        hardToUnderstand:Number(row.hard_to_understand_count || 0),
+        outdated:Number(row.outdated_count || 0)
+      }
+    };
+  });
+
+  const periodStart = Date.now() - safeDays * 24 * 60 * 60 * 1000;
+  const unusedDocuments = docs.filter(doc => {
+    const created = Date.parse(doc.createdAt || '');
+    return doc.useCount === 0 && Number.isFinite(created) && created <= periodStart;
+  });
+
+  const qualityAttention = docs
+    .filter(doc => doc.negativeCount > 0)
+    .map(doc => ({
+      ...doc,
+      level:
+        doc.reasons.wrongSource > 0 ||
+        doc.reasons.outdated > 0 ||
+        doc.negativeCount >= 2
+          ? 'action'
+          : 'watch'
+    }))
+    .sort((a,b) =>
+      Number(b.reasons.wrongSource > 0) - Number(a.reasons.wrongSource > 0) ||
+      b.negativeCount - a.negativeCount ||
+      b.useCount - a.useCount
+    );
+
+  const expiringSoon = (expiringRows?.results || []).map(row => ({
+    documentId:String(row.document_id || ''),
+    sourceId:String(row.source_id || ''),
+    title:String(row.title || ''),
+    validUntil:String(row.valid_until || ''),
+    categoryId:String(row.category_id || ''),
+    categoryName:String(row.category_name || '')
+  }));
+
+  const statusIssues = (statusRows?.results || []).map(row => ({
+    documentId:String(row.document_id || ''),
+    sourceId:String(row.source_id || ''),
+    title:String(row.title || ''),
+    status:String(row.status || ''),
+    categoryId:String(row.category_id || ''),
+    categoryName:String(row.category_name || ''),
+    updatedAt:String(row.updated_at || '')
+  }));
+
+  const faqRequests = Number(faqTotals?.total || 0);
+  const faqInsufficient = Number(faqTotals?.insufficient || 0);
+  const faqInsufficientRate = faqRequests ? faqInsufficient / faqRequests : 0;
+
+  const recommendations = [];
+
+  for (const issue of statusIssues) {
+    const message =
+      issue.status === 'error'
+        ? '処理エラーの現行資料です。同期ジョブとDrive原本を確認してください。'
+        : issue.status === 'source_missing'
+          ? 'Drive原本を確認できない資料です。移動・削除・再登録を確認してください。'
+          : '有効期限切れの資料です。新版が必要か確認してください。';
+
+    recommendations.push({
+      id:'status:' + issue.documentId,
+      type:'document_status',
+      level:issue.status === 'expired' ? 'watch' : 'action',
+      title:issue.title,
+      message,
+      documentId:issue.documentId,
+      sourceId:issue.sourceId,
+      categoryName:issue.categoryName
+    });
+  }
+
+  for (const doc of qualityAttention) {
+    const reasonParts = [];
+    if (doc.reasons.wrongSource) reasonParts.push('根拠違い ' + doc.reasons.wrongSource + '件');
+    if (doc.reasons.outdated) reasonParts.push('古い情報 ' + doc.reasons.outdated + '件');
+    if (doc.reasons.incomplete) reasonParts.push('回答不足 ' + doc.reasons.incomplete + '件');
+    if (doc.reasons.hardToUnderstand) reasonParts.push('わかりにくい ' + doc.reasons.hardToUnderstand + '件');
+
+    recommendations.push({
+      id:'quality:' + doc.documentId,
+      type:'quality_feedback',
+      level:doc.level,
+      title:doc.title,
+      message:
+        '改善評価 ' + doc.negativeCount + '件。' +
+        (reasonParts.length ? reasonParts.join('、') + '。' : '') +
+        '資料本文・版・チャンク構造を確認してください。',
+      documentId:doc.documentId,
+      sourceId:doc.sourceId,
+      categoryName:doc.categoryName
+    });
+  }
+
+  for (const doc of expiringSoon) {
+    recommendations.push({
+      id:'expiry:' + doc.documentId,
+      type:'expiring_soon',
+      level:'watch',
+      title:doc.title,
+      message:'有効期限が ' + doc.validUntil + ' です。新版の有無を確認してください。',
+      documentId:doc.documentId,
+      sourceId:doc.sourceId,
+      categoryName:doc.categoryName
+    });
+  }
+
+  for (const doc of unusedDocuments) {
+    recommendations.push({
+      id:'unused:' + doc.documentId,
+      type:'unused_document',
+      level:'info',
+      title:doc.title,
+      message:
+        safeDays + '日間、FAQ回答の根拠として参照されていません。' +
+        '必要性・検索しやすい表現・対象範囲を確認する候補です。',
+      documentId:doc.documentId,
+      sourceId:doc.sourceId,
+      categoryName:doc.categoryName
+    });
+  }
+
+  if (faqRequests >= 10 && faqInsufficientRate >= 0.40) {
+    recommendations.unshift({
+      id:'global:insufficient',
+      type:'global_coverage',
+      level:faqInsufficientRate >= 0.60 ? 'action' : 'watch',
+      title:'FAQ全体の資料カバー率',
+      message:
+        safeDays + '日間の根拠不足率が ' +
+        (faqInsufficientRate * 100).toFixed(1) +
+        '% です。Evidence Gateは緩めず、承認資料の不足や資料構造を確認してください。',
+      documentId:'',
+      sourceId:'',
+      categoryName:''
+    });
+  }
+
+  const levelOrder = { action:0, watch:1, info:2 };
+  recommendations.sort((a,b) =>
+    (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9) ||
+    String(a.title || '').localeCompare(String(b.title || ''),'ja')
+  );
+
+  return {
+    days:safeDays,
+    privacy:{
+      storesQuestionText:false,
+      storesAnswerText:false,
+      storesUserEmail:false,
+      storesIpAddress:false
+    },
+    summary:{
+      activeDocuments:docs.length,
+      documentsUsed:docs.filter(doc => doc.useCount > 0).length,
+      unusedDocuments:unusedDocuments.length,
+      qualityAttention:qualityAttention.length,
+      expiringSoon:expiringSoon.length,
+      statusIssues:statusIssues.length,
+      faqRequests,
+      faqInsufficient,
+      faqInsufficientRate,
+      actionCount:recommendations.filter(item => item.level === 'action').length,
+      watchCount:recommendations.filter(item => item.level === 'watch').length,
+      infoCount:recommendations.filter(item => item.level === 'info').length
+    },
+    qualityAttention,
+    expiringSoon,
+    unusedDocuments,
+    statusIssues,
+    recommendations
+  };
+}
+
 async function getOperationsSummary(env, hours = 24) {
   const db = requireDb(env);
   await ensureOperationalSchema(env);
@@ -367,5 +668,6 @@ export {
   recordUsageEvent,
   submitFeedback,
   getUsageSummary,
+  getImprovementCandidates,
   getOperationsSummary
 };
