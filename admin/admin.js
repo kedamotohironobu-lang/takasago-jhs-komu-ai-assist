@@ -34,6 +34,13 @@
     refreshDocuments:$('#refresh-documents'),
     searchAuthRequired:$('#search-auth-required'),
     searchContent:$('#search-content'),
+    addAuthRequired:$('#add-auth-required'),
+    addContent:$('#add-content'),
+    registerAdminTest:$('#register-admin-test'),
+    cleanupAdminTest:$('#cleanup-admin-test'),
+    adminRegisterProgress:$('#admin-register-progress'),
+    adminRegisterTitle:$('#admin-register-title'),
+    adminRegisterText:$('#admin-register-text'),
     ragTestQuery:$('#rag-test-query'),
     runRagTest:$('#run-rag-test'),
     searchResultGrid:$('#search-result-grid'),
@@ -124,6 +131,8 @@
     if(nodes.materialsContent) nodes.materialsContent.hidden=!unlocked;
     if(nodes.searchAuthRequired) nodes.searchAuthRequired.hidden=unlocked;
     if(nodes.searchContent) nodes.searchContent.hidden=!unlocked;
+    if(nodes.addAuthRequired) nodes.addAuthRequired.hidden=unlocked;
+    if(nodes.addContent) nodes.addContent.hidden=!unlocked;
   }
 
   function renderAuthState(){
@@ -312,6 +321,133 @@
     if(nodes.searchResultGrid) nodes.searchResultGrid.hidden=false;
   }
 
+  function setAdminRegisterProgress(title,text,visible=true){
+    if(nodes.adminRegisterProgress) nodes.adminRegisterProgress.hidden=!visible;
+    if(nodes.adminRegisterTitle) nodes.adminRegisterTitle.textContent=title;
+    if(nodes.adminRegisterText) nodes.adminRegisterText.textContent=text;
+  }
+
+  async function registerAdminSyntheticTest(){
+    if(!state.authenticated) return;
+
+    if(nodes.registerAdminTest){
+      nodes.registerAdminTest.disabled=true;
+      nodes.registerAdminTest.textContent='登録中…';
+    }
+    setAdminRegisterProgress('D1へ登録中','架空資料をstagingしています。',true);
+
+    try{
+      const staged=await authJson('/admin/rag/stage',{
+        method:'POST',
+        body:JSON.stringify({
+          sourceId:'step5-test-admin-v1',
+          sourceType:'upload',
+          fileName:'STEP5-8_管理画面登録テスト.txt',
+          title:'STEP5-8 管理画面登録テスト',
+          mimeType:'text/plain',
+          categoryId:'cat-other',
+          ownerDepartment:'STEP5-8動作確認',
+          versionLabel:'test-v1',
+          approved:true,
+          sections:[{
+            headingPath:'動作確認 > 備品C',
+            text:[
+              'これは登録確認用の架空資料です。',
+              'テスト備品Cの確認日は水曜日です。',
+              '確認後はテスト記録欄に「確認済み」と記載します。',
+              '実際の校内規則ではありません。'
+            ].join('\n\n')
+          }]
+        })
+      });
+
+      const documentId=String(staged?.result?.documentId||'');
+      if(!documentId) throw new Error('documentIdを取得できませんでした。');
+      sessionStorage.setItem('step58AdminTestDocumentId',documentId);
+
+      setAdminRegisterProgress('Embedding・Vectorize処理中','チャンクを意味ベクトルへ変換しています。',true);
+
+      for(let i=0;i<10;i++){
+        const indexed=await authJson('/admin/rag/index-next',{
+          method:'POST',
+          body:JSON.stringify({documentId,limit:20})
+        });
+        const r=indexed?.result||{};
+        if(r.done===true || Number(r.remaining||0)===0) break;
+        await new Promise(resolve=>setTimeout(resolve,900));
+      }
+
+      let finalized=null;
+      let lastError=null;
+      for(let i=0;i<6;i++){
+        try{
+          if(i>0) await new Promise(resolve=>setTimeout(resolve,4500));
+          finalized=await authJson('/admin/rag/finalize',{
+            method:'POST',
+            body:JSON.stringify({documentId})
+          });
+          lastError=null;
+          break;
+        }catch(err){
+          lastError=err;
+          const msg=String(err?.message||'');
+          if(!msg.includes('Vectorizeへの反映待ち') && !msg.includes('意味検索への反映')){
+            throw err;
+          }
+        }
+      }
+
+      if(!finalized){
+        throw lastError||new Error('Vectorize反映待ちです。少し待って再試行してください。');
+      }
+
+      setAdminRegisterProgress(
+        '登録完了',
+        'D1・Vectorize・FTS5への登録が完了しました。RAG検索テストで「テスト備品Cの確認日はいつですか？」を検索できます。',
+        true
+      );
+      if(nodes.cleanupAdminTest) nodes.cleanupAdminTest.hidden=false;
+      showToast('STEP5-8テスト資料を登録しました。',3200);
+      await Promise.allSettled([loadDocuments(),refreshAll()]);
+    }catch(err){
+      console.error(err);
+      setAdminRegisterProgress('登録エラー',err?.message||'登録に失敗しました。',true);
+      showToast(err?.message||'登録に失敗しました。',4200);
+    }finally{
+      if(nodes.registerAdminTest){
+        nodes.registerAdminTest.disabled=false;
+        nodes.registerAdminTest.textContent='テスト資料を新RAGへ登録';
+      }
+    }
+  }
+
+  async function cleanupAdminSyntheticTest(){
+    if(!state.authenticated) return;
+    const documentId=String(sessionStorage.getItem('step58AdminTestDocumentId')||'');
+    if(!documentId){
+      showToast('このブラウザに削除対象のdocumentIdがありません。');
+      return;
+    }
+
+    if(nodes.cleanupAdminTest) nodes.cleanupAdminTest.disabled=true;
+    try{
+      await authJson('/admin/rag/test-cleanup',{
+        method:'POST',
+        body:JSON.stringify({documentId})
+      });
+      sessionStorage.removeItem('step58AdminTestDocumentId');
+      if(nodes.cleanupAdminTest) nodes.cleanupAdminTest.hidden=true;
+      setAdminRegisterProgress('削除完了','接続確認用の架空資料をD1・Vectorize・FTS5から削除しました。',true);
+      showToast('テスト資料を削除しました。');
+      await Promise.allSettled([loadDocuments(),refreshAll()]);
+    }catch(err){
+      console.error(err);
+      showToast(err?.message||'テスト資料を削除できませんでした。',4200);
+    }finally{
+      if(nodes.cleanupAdminTest) nodes.cleanupAdminTest.disabled=false;
+    }
+  }
+
   async function runRagTest(){
     if(!state.authenticated) return;
     const query=String(nodes.ragTestQuery?.value||'').trim();
@@ -435,6 +571,8 @@
   nodes.refresh.forEach(btn=>btn.addEventListener('click',refreshAll));
   nodes.refreshDocuments?.addEventListener('click',loadDocuments);
   nodes.runRagTest?.addEventListener('click',runRagTest);
+  nodes.registerAdminTest?.addEventListener('click',registerAdminSyntheticTest);
+  nodes.cleanupAdminTest?.addEventListener('click',cleanupAdminSyntheticTest);
   nodes.ragTestQuery?.addEventListener('keydown',(event)=>{
     if(event.key==='Enter'){
       event.preventDefault();
@@ -453,6 +591,9 @@
     renderGoogleButton();
     showToast('ログアウトしました。');
   });
+
+  const existingTestId=sessionStorage.getItem('step58AdminTestDocumentId');
+  if(existingTestId && nodes.cleanupAdminTest) nodes.cleanupAdminTest.hidden=false;
 
   initializeAdminAuth();
   refreshAll();
