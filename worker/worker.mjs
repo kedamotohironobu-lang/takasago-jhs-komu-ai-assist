@@ -469,6 +469,48 @@ function ragVectorStatus(env) {
   };
 }
 
+async function ragDashboardStatus(env) {
+  if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
+    return {
+      configured:false,
+      activeDocuments:0,
+      activeChunks:0,
+      activeCategories:0,
+      runningJobs:0,
+      failedJobs:0,
+      lastCompletedAt:null,
+      capacity:null
+    };
+  }
+
+  try {
+    const [docs, chunks, categories, jobs, lastCompleted, capacity] = await Promise.all([
+      env.RAG_DB.prepare("SELECT COUNT(*) AS count FROM documents WHERE is_current=1 AND status='active'").first(),
+      env.RAG_DB.prepare("SELECT COUNT(*) AS count FROM chunks WHERE is_active=1").first(),
+      env.RAG_DB.prepare("SELECT COUNT(*) AS count FROM categories WHERE is_active=1").first(),
+      env.RAG_DB.prepare("SELECT SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) AS running_count, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed_count FROM sync_jobs").first(),
+      env.RAG_DB.prepare("SELECT MAX(finished_at) AS finished_at FROM sync_jobs WHERE status='completed'").first(),
+      getRagCapacity(env)
+    ]);
+
+    return {
+      configured:true,
+      activeDocuments:Number(docs?.count || 0),
+      activeChunks:Number(chunks?.count || 0),
+      activeCategories:Number(categories?.count || 0),
+      runningJobs:Number(jobs?.running_count || 0),
+      failedJobs:Number(jobs?.failed_count || 0),
+      lastCompletedAt:lastCompleted?.finished_at || null,
+      capacity
+    };
+  } catch (e) {
+    return {
+      configured:true,
+      error:'RAG_DASHBOARD_QUERY_FAILED'
+    };
+  }
+}
+
 async function ragDbStatus(env) {
   if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
     return { configured:false, schemaReady:false, missingTables:['categories','documents','chunks','audit_logs','sync_jobs','chunks_fts'] };
@@ -540,6 +582,10 @@ export default {
           insufficientMessage:'登録資料では確認できません。'
         }
       },200,origin || '*');
+    }
+    if (request.method === 'GET' && url.pathname === '/health/rag-dashboard') {
+      const status = await ragDashboardStatus(env);
+      return json({ok:true,ragDashboard:status},200,origin || '*');
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/schema-ensure') {
