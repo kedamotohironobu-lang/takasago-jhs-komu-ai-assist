@@ -109,7 +109,10 @@
     monthlyReportMonth:$('#monthly-report-month'),
     generateMonthlyReport:$('#generate-monthly-report'),
     printMonthlyReport:$('#print-monthly-report'),
-    downloadMonthlyReport:$('#download-monthly-report')
+    downloadMonthlyReport:$('#download-monthly-report'),
+    refreshAutomationStatus:$('#refresh-automation-status'),
+    automationRunBadge:$('#automation-run-badge'),
+    automationRunNote:$('#automation-run-note')
   };
 
   function showToast(message, ms=2600){
@@ -225,6 +228,7 @@
     if(nodes.generateMonthlyReport) nodes.generateMonthlyReport.disabled=!unlocked;
     if(nodes.printMonthlyReport) nodes.printMonthlyReport.disabled=!unlocked || !state.monthlyReport;
     if(nodes.downloadMonthlyReport) nodes.downloadMonthlyReport.disabled=!unlocked || !state.monthlyReport;
+    if(nodes.refreshAutomationStatus) nodes.refreshAutomationStatus.disabled=!unlocked;
     if(nodes.runAcceptanceSuite) nodes.runAcceptanceSuite.disabled=!unlocked || state.acceptance.running;
     if(nodes.refreshJobs) nodes.refreshJobs.disabled=!unlocked;
     if(nodes.downloadBackup) nodes.downloadBackup.disabled=!unlocked;
@@ -282,6 +286,7 @@
         loadUsageAnalytics();
         loadImprovementCandidates();
         loadImprovementActions();
+        loadAutomationStatusAdmin();
       }
       return state.authenticated;
     }catch(err){
@@ -1372,6 +1377,106 @@
     showToast('改善候補レポートを保存しました。',3200);
   }
 
+  function renderAutomationStatusAdmin(data){
+    const result=data||{};
+    const last=result.last||null;
+
+    if(!last){
+      setText('automation-last-run','未実行');
+      setText('automation-report-status','—');
+      setText('automation-notification-status','—');
+      setText('automation-improvement-counts','—');
+
+      if(nodes.automationRunBadge){
+        nodes.automationRunBadge.textContent='未実行';
+        nodes.automationRunBadge.classList.remove('accent','is-warn','is-error');
+      }
+      if(nodes.automationRunNote){
+        nodes.automationRunNote.textContent=
+          'GASの日次自動処理が実行されると、ここへ最終結果が表示されます。';
+      }
+      return;
+    }
+
+    const notifyLabels={
+      sent_initial_issue:'異常通知を送信',
+      sent_changed_issue:'状態変化を通知',
+      sent_recovery:'正常化を通知',
+      unchanged:'変化なし・通知なし',
+      baseline_ok:'正常・通知なし',
+      changed_ok:'正常・通知なし',
+      recipient_missing:'通知先未確認',
+      mail_quota_exceeded:'メール上限',
+      send_failed:'通知失敗'
+    };
+
+    setText(
+      'automation-last-run',
+      last.createdAt ? formatDate(last.createdAt) : '日時不明'
+    );
+    setText(
+      'automation-report-status',
+      last.reportMonth
+        ? last.reportMonth+' / '+(last.reportSaved?'保存済み':'未保存')
+        : '対象なし'
+    );
+    setText(
+      'automation-notification-status',
+      notifyLabels[last.notificationStatus] || last.notificationStatus || '通知なし'
+    );
+    setText(
+      'automation-improvement-counts',
+      Number(last.improvementActionCount||0)+' / '+Number(last.improvementWatchCount||0)
+    );
+
+    const status=String(last.status||'');
+    const ok=status==='ok';
+    const partial=status==='partial';
+
+    if(nodes.automationRunBadge){
+      nodes.automationRunBadge.textContent=
+        ok?'正常':(partial?'一部要確認':'要確認');
+      nodes.automationRunBadge.classList.toggle('accent',ok);
+      nodes.automationRunBadge.classList.toggle('is-warn',partial);
+      nodes.automationRunBadge.classList.toggle('is-error',!ok&&!partial);
+    }
+
+    if(nodes.automationRunNote){
+      const parts=[
+        '運用監視: '+String(last.operationsHealth||'不明'),
+        'エラー '+Number(last.errorCount||0)+'件'
+      ];
+      nodes.automationRunNote.textContent=parts.join(' ／ ');
+    }
+  }
+
+  async function loadAutomationStatusAdmin(){
+    if(!state.authenticated) return;
+    try{
+      if(nodes.refreshAutomationStatus){
+        nodes.refreshAutomationStatus.disabled=true;
+        nodes.refreshAutomationStatus.textContent='確認中…';
+      }
+      const data=await authJson('/admin/automation/status');
+      renderAutomationStatusAdmin(data?.result||{});
+    }catch(err){
+      console.error('automation status error',err);
+      if(nodes.automationRunBadge){
+        nodes.automationRunBadge.textContent='取得失敗';
+        nodes.automationRunBadge.classList.add('is-error');
+      }
+      if(nodes.automationRunNote){
+        nodes.automationRunNote.textContent=
+          err?.message||'自動運用状態を取得できませんでした。';
+      }
+    }finally{
+      if(nodes.refreshAutomationStatus){
+        nodes.refreshAutomationStatus.disabled=false;
+        nodes.refreshAutomationStatus.textContent='↻ 更新';
+      }
+    }
+  }
+
   function renderSummary(data){
     const s=data?.ragDashboard||{};
     setText('metric-docs',String(s.activeDocuments??'—'));
@@ -2152,7 +2257,12 @@
       renderHealth(worker,d1,vector,gate);
       renderSummary(summary);
       renderReadiness(readiness);
-      if(state.authenticated) await loadUsageAnalytics();
+      if(state.authenticated){
+        await Promise.allSettled([
+          loadUsageAnalytics(),
+          loadAutomationStatusAdmin()
+        ]);
+      }
       setText('last-updated',new Date().toLocaleString('ja-JP'));
     }catch(err){
       console.error(err);
@@ -2228,6 +2338,7 @@
   nodes.generateMonthlyReport?.addEventListener('click',loadMonthlyReport);
   nodes.printMonthlyReport?.addEventListener('click',()=>window.print());
   nodes.downloadMonthlyReport?.addEventListener('click',downloadMonthlyReport);
+  nodes.refreshAutomationStatus?.addEventListener('click',loadAutomationStatusAdmin);
   nodes.improvementList?.addEventListener('click',(event)=>{
     const startButton=event.target.closest('.start-improvement');
     if(startButton){
