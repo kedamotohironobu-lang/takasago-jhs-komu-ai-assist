@@ -282,3 +282,49 @@ button{cursor:pointer}
   .section-actions{width:100%;align-items:stretch;flex-direction:column}
   .section-actions .refresh-button{width:100%}
 }
+
+
+/* STEP5-14: recovery / retry / backup */
+.row-action{
+  border:0;
+  border-radius:9px;
+  padding:7px 10px;
+  background:#eaf3f8;
+  color:#245d7e;
+  font-weight:850;
+  font-size:12px;
+  cursor:pointer
+}
+.row-action:hover{filter:brightness(.98)}
+.row-action.danger{
+  background:#fde9e8;
+  color:#9a3936
+}
+.table-muted{
+  color:#8a9ba8;
+  font-size:12px;
+  font-weight:700
+}
+.is-deleted-row{
+  opacity:.72;
+  background:#fafafa
+}
+.backup-note{
+  margin-top:10px;
+  padding:12px 14px;
+  border:1px solid #dbe7ee;
+  border-radius:12px;
+  background:#f8fbfd
+}
+.backup-note strong{display:block;color:#285a78}
+.backup-note p{
+  margin:5px 0 0;
+  color:#687f90;
+  font-size:12px;
+  line-height:1.65
+}
+.recovery-panel,.backup-panel{margin-top:16px}
+.status-pill.ok{
+  background:#e1f4ea;
+  color:#176b49
+}
