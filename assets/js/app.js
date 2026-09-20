@@ -15,8 +15,22 @@
   };
 
   const state = {
-    currentTool:'parent', lastResult:'', lastInput:'', lastProvider:'',
-    drafts:{}, requestController:null, config:null, configPromise:null
+    currentTool:'parent',
+    lastResult:'',
+    lastInput:'',
+    lastProvider:'',
+    drafts:{},
+    requestController:null,
+    config:null,
+    configPromise:null,
+    staffAuthInitialized:false,
+    staffGoogleClientId:'',
+    staffIdToken:
+      sessionStorage.getItem('takasagoStaffIdToken') ||
+      sessionStorage.getItem('takasagoAdminIdToken') ||
+      '',
+    staffAuthenticated:false,
+    staffUser:null
   };
 
   const $ = (s) => document.querySelector(s);
@@ -29,7 +43,17 @@
     resultTitle:$('#result-title'), resultOutput:$('#result-output'), resultTip:$('#result-tip'),
     copyButton:$('[data-copy-result]'), quickButtons:document.querySelectorAll('[data-quick-edit]'),
     helpButton:$('[data-help-button]'), adminButton:$('[data-admin-button]'), toast:$('#app-toast'),
-    submitButton:$('#editor-form .primary-action')
+    submitButton:$('#editor-form .primary-action'),
+    faqAuthPanel:$('#faq-auth-panel'),
+    faqAuthTitle:$('#faq-auth-title'),
+    faqAuthDescription:$('#faq-auth-description'),
+    faqAuthBadge:$('#faq-auth-badge'),
+    faqGoogleSignin:$('#faq-google-signin'),
+    faqSignedUser:$('#faq-signed-user'),
+    faqUserName:$('#faq-user-name'),
+    faqSignoutButton:$('#faq-signout-button'),
+    faqResultSources:$('#faq-result-sources'),
+    faqResultSourceList:$('#faq-result-source-list')
   };
 
   if (nodes.year) nodes.year.textContent = new Date().getFullYear();
@@ -37,9 +61,9 @@
   const stageStrong = document.querySelector('.stage-card strong');
   const stageText = document.querySelector('.stage-card p');
   const footerStage = document.querySelector('.site-footer p');
-  if (stageStrong) stageStrong.textContent = '現在：STEP 5-7 管理者ダッシュボード実装';
-  if (stageText) stageText.textContent = 'D1・Vectorize・FTS5・Evidence Gateまで検証済みです。管理者ダッシュボードを追加し、次にGoogle管理者認証と資料管理を接続します。';
-  if (footerStage) footerStage.textContent = '高砂市立高砂中学校　校務AIアシスト — STEP 5-7 管理者ダッシュボード版';
+  if (stageStrong) stageStrong.textContent = '現在：STEP 5-9 新RAG FAQ本番切替';
+  if (stageText) stageText.textContent = '校内FAQはGoogle職員認証後、D1・Vectorize・FTS5・RRF・Evidence Gateを通った根拠だけで回答します。';
+  if (footerStage) footerStage.textContent = '高砂市立高砂中学校　校務AIアシスト — STEP 5-9 新RAG FAQ版';
 
   const tool = (id) => TOOLS[id] || TOOLS.parent;
 
@@ -80,9 +104,201 @@
     nodes.inputLabel.textContent = item.label; nodes.mainInput.placeholder = item.placeholder;
     nodes.mainInput.value = draft.input || ''; nodes.optionArea.hidden = !item.usesOptions;
     nodes.length.value = draft.length || '標準'; nodes.tone.value = draft.tone || '丁寧';
-    renderMiniTools(); showScreen('editor'); setTimeout(() => nodes.mainInput.focus(), 150);
+    renderMiniTools();
+    updateFaqAuthUi();
+    showScreen('editor');
+    if (id === 'faq') initializeStaffAuth();
+    setTimeout(() => nodes.mainInput.focus(), 150);
   }
 
+
+  async function workerBaseUrl() {
+    const cfg = await loadConfig();
+    return String(cfg.workerBaseUrl || '').trim().replace(/\/+$/, '');
+  }
+
+  async function staffGet(path, token='') {
+    const base = await workerBaseUrl();
+    if (!base) throw new Error('WORKER_NOT_CONFIGURED');
+    const headers = {};
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const res = await fetch(base + path, { headers, cache:'no-store' });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    if (!res.ok || data?.ok === false) {
+      const err = new Error(data?.error?.message || '職員認証に失敗しました。');
+      err.code = data?.error?.code || ('HTTP_' + res.status);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
+  function updateFaqAuthUi() {
+    const isFaq = state.currentTool === 'faq';
+    if (nodes.faqAuthPanel) nodes.faqAuthPanel.hidden = !isFaq;
+    if (!isFaq) return;
+
+    const authenticated = Boolean(state.staffAuthenticated && state.staffUser);
+    if (nodes.faqSignedUser) nodes.faqSignedUser.hidden = !authenticated;
+    if (nodes.faqGoogleSignin) nodes.faqGoogleSignin.hidden = authenticated || !state.staffGoogleClientId;
+
+    if (authenticated) {
+      if (nodes.faqAuthTitle) nodes.faqAuthTitle.textContent = '職員認証済み';
+      if (nodes.faqAuthDescription) nodes.faqAuthDescription.textContent =
+        '承認済みの校内資料を新RAGで検索できます。';
+      if (nodes.faqAuthBadge) nodes.faqAuthBadge.textContent = '✓ 認証済み';
+      if (nodes.faqAuthBadge) nodes.faqAuthBadge.classList.add('is-authenticated');
+      if (nodes.faqUserName) {
+        nodes.faqUserName.textContent =
+          state.staffUser.name || state.staffUser.email || '職員';
+      }
+    } else {
+      if (nodes.faqAuthTitle) nodes.faqAuthTitle.textContent = '校内FAQは職員ログインが必要です';
+      if (nodes.faqAuthDescription) {
+        nodes.faqAuthDescription.textContent = state.staffGoogleClientId
+          ? '許可されたGoogleアカウントでログインしてください。'
+          : '職員認証の設定を確認しています。';
+      }
+      if (nodes.faqAuthBadge) {
+        nodes.faqAuthBadge.textContent = state.staffGoogleClientId ? '🔒 未ログイン' : '⏳ 確認中';
+        nodes.faqAuthBadge.classList.remove('is-authenticated');
+      }
+    }
+
+    if (nodes.submitButton && isFaq) {
+      nodes.submitButton.disabled = !authenticated;
+      if (!authenticated) nodes.submitButton.textContent = '🔒 職員ログイン後に利用できます';
+      else nodes.submitButton.textContent = '✨ AIで作成する';
+    }
+  }
+
+  async function verifyStaffToken(token) {
+    if (!token) return false;
+    try {
+      const data = await staffGet('/staff/auth/me', token);
+      state.staffAuthenticated = Boolean(data?.staff?.authenticated);
+      state.staffUser = data?.staff || null;
+      if (state.staffAuthenticated) {
+        state.staffIdToken = token;
+        sessionStorage.setItem('takasagoStaffIdToken', token);
+      }
+      updateFaqAuthUi();
+      return state.staffAuthenticated;
+    } catch (err) {
+      console.warn('staff token verification failed', err);
+      sessionStorage.removeItem('takasagoStaffIdToken');
+      if (sessionStorage.getItem('takasagoAdminIdToken') === token) {
+        sessionStorage.removeItem('takasagoAdminIdToken');
+      }
+      state.staffIdToken = '';
+      state.staffAuthenticated = false;
+      state.staffUser = null;
+      updateFaqAuthUi();
+      return false;
+    }
+  }
+
+  async function handleStaffCredential(response) {
+    const token = String(response?.credential || '');
+    if (!token) return;
+    const ok = await verifyStaffToken(token);
+    showToast(ok ? '職員としてログインしました。' : 'このGoogleアカウントでは校内FAQを利用できません。', 3600);
+  }
+
+  function renderStaffGoogleButton() {
+    if (!state.staffGoogleClientId || !window.google?.accounts?.id || !nodes.faqGoogleSignin) {
+      return false;
+    }
+    nodes.faqGoogleSignin.innerHTML = '';
+    window.google.accounts.id.initialize({
+      client_id:state.staffGoogleClientId,
+      callback:handleStaffCredential,
+      auto_select:false
+    });
+    window.google.accounts.id.renderButton(nodes.faqGoogleSignin, {
+      theme:'outline',
+      size:'large',
+      shape:'pill',
+      text:'signin_with',
+      locale:'ja',
+      width:240
+    });
+    nodes.faqGoogleSignin.hidden = state.staffAuthenticated;
+    return true;
+  }
+
+  async function initializeStaffAuth() {
+    if (state.staffAuthInitialized) {
+      updateFaqAuthUi();
+      renderStaffGoogleButton();
+      return;
+    }
+    state.staffAuthInitialized = true;
+
+    try {
+      const data = await staffGet('/health/staff-auth');
+      state.staffGoogleClientId = String(data?.staffAuth?.googleClientId || '');
+      updateFaqAuthUi();
+
+      if (state.staffIdToken) {
+        await verifyStaffToken(state.staffIdToken);
+      }
+
+      if (!data?.staffAuth?.configured || !state.staffGoogleClientId) {
+        updateFaqAuthUi();
+        return;
+      }
+
+      let tries = 0;
+      const timer = setInterval(() => {
+        tries++;
+        if (renderStaffGoogleButton() || tries >= 30) clearInterval(timer);
+      }, 200);
+    } catch (err) {
+      console.error('staff auth initialization failed', err);
+      state.staffAuthInitialized = false;
+      updateFaqAuthUi();
+    }
+  }
+
+  function renderFaqSources(sources) {
+    if (!nodes.faqResultSources || !nodes.faqResultSourceList) return;
+    const list = Array.isArray(sources) ? sources : [];
+
+    if (state.currentTool !== 'faq' || !list.length) {
+      nodes.faqResultSources.hidden = true;
+      nodes.faqResultSourceList.replaceChildren();
+      return;
+    }
+
+    nodes.faqResultSourceList.replaceChildren();
+    for (const source of list) {
+      const card = document.createElement('article');
+      card.className = 'faq-source-card';
+
+      const title = document.createElement('strong');
+      title.textContent = source.title || source.fileName || '根拠資料';
+      card.appendChild(title);
+
+      const metaParts = [];
+      if (source.versionLabel) metaParts.push('版: ' + source.versionLabel);
+      if (source.categoryName) metaParts.push('分類: ' + source.categoryName);
+      if (source.headingPath) metaParts.push('見出し: ' + source.headingPath);
+      if (source.pageFrom) {
+        metaParts.push('ページ: ' + source.pageFrom + (source.pageTo && source.pageTo !== source.pageFrom ? '–' + source.pageTo : ''));
+      }
+      if (source.sheetName) metaParts.push('シート: ' + source.sheetName);
+      if (source.slideNo) metaParts.push('スライド: ' + source.slideNo);
+
+      const meta = document.createElement('p');
+      meta.textContent = metaParts.join(' ／ ') || 'D1登録資料';
+      card.appendChild(meta);
+
+      nodes.faqResultSourceList.appendChild(card);
+    }
+    nodes.faqResultSources.hidden = false;
+  }
   async function loadConfig() {
     if (state.config) return state.config;
     if (state.configPromise) return state.configPromise;
@@ -100,12 +316,18 @@
   }
 
   function demoResult(input) {
-    if (state.currentTool === 'faq') return '【校内FAQ】\n校内FAQはCloudflare KVの承認資料を検索して回答します。現在はWorker接続設定を確認してください。';
+    if (state.currentTool === 'faq') return '【校内FAQ】\n校内FAQは新RAG基盤への接続が必要です。';
     return `【STEP 3 接続待ち】\nCloudflare Worker のURLがまだ設定されていないため、AI通信は行っていません。\n\n【入力内容】\n${input}\n\n※ assets/js/config.json の workerBaseUrl を設定するとAI生成へ切り替わります。`;
   }
 
   function setBusy(busy, label='AIが作成中…') {
-    if (nodes.submitButton) { nodes.submitButton.disabled = busy; nodes.submitButton.textContent = busy ? `⏳ ${label}` : '✨ AIで作成する'; }
+    if (nodes.submitButton) {
+      const faqLocked = state.currentTool === 'faq' && !state.staffAuthenticated;
+      nodes.submitButton.disabled = busy || faqLocked;
+      nodes.submitButton.textContent = busy
+        ? `⏳ ${label}`
+        : (faqLocked ? '🔒 職員ログイン後に利用できます' : '✨ AIで作成する');
+    }
     nodes.quickButtons.forEach((b) => { b.disabled = busy; });
   }
 
@@ -126,8 +348,12 @@
     const controller = new AbortController(); state.requestController = controller;
     const timeout = setTimeout(() => controller.abort(), Number(cfg.requestTimeoutMs) || 65000);
     try {
+      const headers = {'Content-Type':'application/json'};
+      if (payload.toolId === 'faq' && state.staffIdToken) {
+        headers.Authorization = 'Bearer ' + state.staffIdToken;
+      }
       const res = await fetch(`${base}/api/generate`, {
-        method:'POST', headers:{'Content-Type':'application/json'}, signal:controller.signal,
+        method:'POST', headers, signal:controller.signal,
         body:JSON.stringify(payload)
       });
       let data = null;
@@ -147,14 +373,21 @@
   function errorMessage(err) {
     if (err?.name === 'AbortError') return 'AI通信がタイムアウトしました。もう一度お試しください。';
     if (err?.code === 'WORKER_NOT_CONFIGURED') return 'Cloudflare Worker のURLが未設定です。';
-    if (err?.code === 'FAQ_RAG_NOT_CONFIGURED') return '校内FAQの非公開資料ストレージがまだ設定されていません。';
-    if (err?.code === 'FAQ_NO_SOURCES') return '校内FAQの承認資料がまだ登録されていません。';
+    if (err?.code === 'STAFF_AUTH_REQUIRED') return '校内FAQを利用するには職員ログインが必要です。';
+    if (err?.code === 'STAFF_EMAIL_NOT_ALLOWED') return 'このGoogleアカウントには校内FAQの利用権限がありません。';
+    if (err?.code === 'GOOGLE_ID_TOKEN_EXPIRED') return 'Googleログインの有効期限が切れました。もう一度ログインしてください。';
+    if (err?.code === 'FAQ_RAG_NOT_CONFIGURED') return '校内FAQの新RAG基盤がまだ設定されていません。';
     if (err?.status === 429 || err?.code === 'RATE_LIMITED') return 'AIの利用上限に達しました。少し時間をおいて再度お試しください。';
     if (err?.status >= 500 || err?.code === 'ALL_PROVIDERS_FAILED') return 'AIサービスへ接続できませんでした。しばらくしてから再度お試しください。';
     return err?.message || 'AI生成中にエラーが発生しました。';
   }
 
   async function generateResult(quickEdit='') {
+    if (state.currentTool === 'faq' && !state.staffAuthenticated) {
+      showToast('校内FAQは職員ログイン後に利用できます。', 3800);
+      await initializeStaffAuth();
+      return;
+    }
     const input = nodes.mainInput.value.trim();
     if (!input) { showToast('内容を入力してください。'); nodes.mainInput.focus(); return; }
     if (input.length > 12000) { showToast('入力が長すぎます。12,000文字以内にしてください。', 4200); nodes.mainInput.focus(); return; }
@@ -174,11 +407,15 @@
       nodes.resultTitle.textContent = tool(state.currentTool).title;
       nodes.resultOutput.textContent = state.lastResult;
       nodes.resultTip.textContent = tool(state.currentTool).tip;
+      renderFaqSources(data.sources || []);
       renderQuickButtons(); showScreen('result');
       if (data.provider === 'demo') showToast('STEP3コード準備済み：Worker URL設定後にAI通信へ切り替わります。', 4200);
     } catch (err) {
       console.error('AI generate error', err); showToast(errorMessage(err), 4600);
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+      if (state.currentTool === 'faq') updateFaqAuthUi();
+    }
   }
 
   async function copyResult() {
@@ -195,6 +432,16 @@
   nodes.copyButton?.addEventListener('click', copyResult);
   nodes.quickButtons.forEach((button) => button.addEventListener('click', () => generateResult(button.dataset.quickEdit || '')));
   nodes.helpButton?.addEventListener('click', () => showToast('機能を選ぶ → 内容を入力 →「AIで作成する」の順です。'));
+  nodes.faqSignoutButton?.addEventListener('click', () => {
+    sessionStorage.removeItem('takasagoStaffIdToken');
+    state.staffIdToken = '';
+    state.staffAuthenticated = false;
+    state.staffUser = null;
+    try { window.google?.accounts?.id?.disableAutoSelect(); } catch {}
+    updateFaqAuthUi();
+    renderStaffGoogleButton();
+    showToast('校内FAQからログアウトしました。');
+  });
   nodes.adminButton?.addEventListener('click', () => {
     window.location.href = 'admin/';
   });
