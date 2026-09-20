@@ -182,6 +182,18 @@
         </table>
       </div>
     </section>
+
+    <section class="card">
+      <h2>⑥ 自動メンテナンス</h2>
+      <div id="maintenanceStatus" class="status-row"></div>
+      <p id="maintenanceDetail" class="small">状態を確認しています。</p>
+      <div class="actions">
+        <button class="primary" onclick="runMaintenanceNow()">今すぐ実行</button>
+        <button class="secondary" id="enableMaintenanceBtn" onclick="enableMaintenance()">日次監視を有効化</button>
+        <button class="secondary" id="disableMaintenanceBtn" onclick="disableMaintenance()">日次監視を無効化</button>
+      </div>
+      <p class="help">日次監視は毎朝6時台（JST）に、期限切れ資料の除外とDrive変更件数の確認だけを行います。Drive変更資料を自動登録したり、原本未確認資料を自動削除したりはしません。</p>
+    </section>
   </div>
 </main>
 
@@ -233,7 +245,8 @@
       await Promise.allSettled([
         loadCategories(false),
         loadDriveFiles(false),
-        loadRegistered(false)
+        loadRegistered(false),
+        loadMaintenanceStatus(false)
       ]);
     }catch(e){toast(e.message)}
     finally{busy(false)}
@@ -575,6 +588,92 @@
     }catch(e){
       document.getElementById('registeredRows').innerHTML='<tr><td colspan="6">'+escapeHtml(e.message)+'</td></tr>';
     }finally{if(showBusy)busy(false)}
+  }
+
+  async function loadMaintenanceStatus(showBusy=true){
+    if(showBusy)busy(true);
+    try{
+      const status=await gs('getDailyMaintenanceStatusStep5');
+      renderMaintenanceStatus(status);
+    }catch(e){
+      document.getElementById('maintenanceDetail').textContent=e.message;
+    }finally{if(showBusy)busy(false)}
+  }
+
+  function renderMaintenanceStatus(status){
+    const enabled=Boolean(status&&status.enabled);
+    const badges=[];
+    badges.push(
+      '<span class="badge '+(enabled?'ok':'warn')+'">'+
+      (enabled?'日次監視 有効':'日次監視 無効')+
+      '</span>'
+    );
+
+    const last=status&&status.last?status.last:null;
+    if(last){
+      badges.push(
+        '<span class="badge '+(last.ok?'ok':'bad')+'">'+
+        (last.ok?'前回実行 正常':'前回実行 要確認')+
+        '</span>'
+      );
+    }
+
+    document.getElementById('maintenanceStatus').innerHTML=badges.join('');
+    document.getElementById('enableMaintenanceBtn').disabled=enabled;
+    document.getElementById('disableMaintenanceBtn').disabled=!enabled;
+
+    if(!last){
+      document.getElementById('maintenanceDetail').textContent=
+        (enabled?(status.schedule||'毎日6時台')+' ／ ':'')+'まだ実行履歴はありません。';
+      return;
+    }
+
+    const drive=last.drive&&last.drive.counts?last.drive.counts:{};
+    const worker=last.worker||{};
+    const ranAt=last.ranAt?new Date(last.ranAt).toLocaleString('ja-JP'):'日時不明';
+    document.getElementById('maintenanceDetail').textContent=
+      '前回: '+ranAt+
+      ' ／ 期限切れ除外 '+Number(worker.expiredCount||0)+'件'+
+      ' ／ 停滞ジョブ '+Number(worker.stalledJobCount||0)+'件'+
+      ' ／ Drive変更 '+Number(drive.changed||0)+'件'+
+      ' ／ 新規 '+Number(drive.new||0)+'件'+
+      ' ／ 原本未確認 '+Number(drive.missing||0)+'件'+
+      (Array.isArray(last.errors)&&last.errors.length?' ／ エラー: '+last.errors.join(' / '):'');
+  }
+
+  async function runMaintenanceNow(){
+    busy(true);
+    try{
+      const result=await gs('runDailyRagMaintenanceStep5');
+      renderMaintenanceStatus(await gs('getDailyMaintenanceStatusStep5'));
+      toast(result&&result.ok?'メンテナンスを実行しました。':'メンテナンス結果を確認してください。');
+      await Promise.allSettled([
+        loadDriveFiles(false),
+        loadRegistered(false),
+        reloadStatusOnly()
+      ]);
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
+  }
+
+  async function enableMaintenance(){
+    busy(true);
+    try{
+      const status=await gs('installDailyMaintenanceTriggerStep5');
+      renderMaintenanceStatus(status);
+      toast('日次監視を有効化しました。');
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
+  }
+
+  async function disableMaintenance(){
+    busy(true);
+    try{
+      const status=await gs('uninstallDailyMaintenanceTriggerStep5');
+      renderMaintenanceStatus(status);
+      toast('日次監視を無効化しました。');
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
   }
 
   async function reloadStatusOnly(){
