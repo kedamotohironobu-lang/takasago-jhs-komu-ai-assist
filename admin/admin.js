@@ -4,6 +4,7 @@
   const state = {
     config:null,
     loading:false,
+    documents:[],
     googleClientId:'',
     idToken:sessionStorage.getItem('takasagoAdminIdToken') || '',
     authenticated:false,
@@ -47,7 +48,11 @@
     testCandidates:$('#test-candidates'),
     testEvidence:$('#test-evidence'),
     auditBody:$('#audit-body'),
-    refreshAudit:$('#refresh-audit')
+    refreshAudit:$('#refresh-audit'),
+    driveAuthRequired:$('#drive-auth-required'),
+    driveContent:$('#drive-content'),
+    driveSyncBody:$('#drive-sync-body'),
+    refreshDriveStatus:$('#refresh-drive-status')
   };
 
   function showToast(message, ms=2600){
@@ -135,6 +140,8 @@
     if(nodes.searchContent) nodes.searchContent.hidden=!unlocked;
     if(nodes.addAuthRequired) nodes.addAuthRequired.hidden=unlocked;
     if(nodes.addContent) nodes.addContent.hidden=!unlocked;
+    if(nodes.driveAuthRequired) nodes.driveAuthRequired.hidden=unlocked;
+    if(nodes.driveContent) nodes.driveContent.hidden=!unlocked;
   }
 
   function renderAuthState(){
@@ -287,11 +294,32 @@
     }
   }
 
+  function renderDriveSyncStatus(documents){
+    if(!nodes.driveSyncBody) return;
+    const rows=(Array.isArray(documents)?documents:[])
+      .filter(doc=>doc.isCurrent===true && doc.sourceType==='drive');
+
+    nodes.driveSyncBody.innerHTML=rows.map(doc=>`
+      <tr>
+        <td>
+          <strong>${escapeHtml(doc.title||doc.fileName||'無題')}</strong>
+          <small>${escapeHtml(doc.driveFileId||doc.sourceId||'')}</small>
+        </td>
+        <td><span class="status-pill ${doc.status==='active'?'ok':''}">${escapeHtml(doc.status||'—')}</span></td>
+        <td>${escapeHtml(doc.versionLabel||('rev '+doc.revisionNo))}</td>
+        <td>${formatDate(doc.sourceModifiedAt)}</td>
+        <td>${formatDate(doc.lastSyncedAt)}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="5">Drive由来の現行資料はありません。</td></tr>';
+  }
+
   async function loadDocuments(){
     if(!state.authenticated) return;
     try{
       const data=await authJson('/admin/rag/documents');
       const docs=Array.isArray(data?.result?.documents)?data.result.documents:[];
+      state.documents=docs;
+      renderDriveSyncStatus(docs);
       if(nodes.documentsBody){
         nodes.documentsBody.innerHTML=docs.map(doc=>`
           <tr>
@@ -652,6 +680,7 @@
   nodes.refresh.forEach(btn=>btn.addEventListener('click',refreshAll));
   nodes.refreshDocuments?.addEventListener('click',loadDocuments);
   nodes.refreshAudit?.addEventListener('click',loadAuditLogs);
+  nodes.refreshDriveStatus?.addEventListener('click',loadDocuments);
   nodes.runRagTest?.addEventListener('click',runRagTest);
   nodes.registerAdminTest?.addEventListener('click',registerAdminSyntheticTest);
   nodes.cleanupAdminTest?.addEventListener('click',cleanupAdminSyntheticTest);
@@ -669,6 +698,7 @@
     try{ window.google?.accounts?.id?.disableAutoSelect(); }catch{}
     if(nodes.documentsBody) nodes.documentsBody.innerHTML='';
     if(nodes.auditBody) nodes.auditBody.innerHTML='<tr><td colspan="4">管理者ログイン後に表示します。</td></tr>';
+    if(nodes.driveSyncBody) nodes.driveSyncBody.innerHTML='<tr><td colspan="5">管理者ログイン後に表示します。</td></tr>';
     if(nodes.searchResultGrid) nodes.searchResultGrid.hidden=true;
     renderAuthState();
     renderGoogleButton();
