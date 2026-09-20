@@ -264,3 +264,21 @@ button{cursor:pointer}
 @media(max-width:700px){
   .readiness-summary,.readiness-checks{grid-template-columns:1fr}
 }
+
+
+/* STEP5-13: maintenance controls */
+.section-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.maintenance-result{
+  margin:0 0 14px;
+  padding:11px 13px;
+  border:1px solid #d9e7ef;
+  border-radius:12px;
+  background:#f4f9fc;
+  color:#45677e;
+  font-size:12px;
+  font-weight:800
+}
+@media(max-width:700px){
+  .section-actions{width:100%;align-items:stretch;flex-direction:column}
+  .section-actions .refresh-button{width:100%}
+}
