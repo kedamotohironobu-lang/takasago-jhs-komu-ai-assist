@@ -195,7 +195,7 @@ async function getUsageSummary(env, days = 30) {
   const safeDays = Math.max(1, Math.min(365, Number(days) || 30));
   const modifier = '-' + safeDays + ' days';
 
-  const [totals, feedback, providers, tools, sources, daily] = await Promise.all([
+  const [totals, feedback, feedbackReasons, providers, tools, sources, daily] = await Promise.all([
     db.prepare(`
       SELECT
         COUNT(*) AS total_requests,
@@ -216,6 +216,14 @@ async function getUsageSummary(env, days = 30) {
       FROM feedback_events
       WHERE datetime(occurred_at) >= datetime('now',?)
     `).bind(modifier).first(),
+    db.prepare(`
+      SELECT reason_code,COUNT(*) AS count
+      FROM feedback_events
+      WHERE datetime(occurred_at) >= datetime('now',?)
+        AND rating='needs_improvement'
+      GROUP BY reason_code
+      ORDER BY count DESC
+    `).bind(modifier).all(),
     db.prepare(`
       SELECT provider,COUNT(*) AS count,ROUND(AVG(latency_ms),0) AS avg_latency_ms
       FROM usage_events
@@ -285,6 +293,7 @@ async function getUsageSummary(env, days = 30) {
       needsImprovement:Number(feedback?.needs_improvement || 0),
       helpfulRate:feedbackTotal ? helpful / feedbackTotal : 0
     },
+    feedbackReasons:feedbackReasons?.results || [],
     providers:providers?.results || [],
     tools:tools?.results || [],
     topDocuments:sources?.results || [],
