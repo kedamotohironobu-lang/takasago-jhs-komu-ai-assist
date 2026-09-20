@@ -21,8 +21,8 @@ STEP4のKV一括FAQを壊さず、本番RAGを次の構成へ移行する。
 - model: gemini-embedding-2
 - output dimensions: 384
 - metric: cosine
-- document task: RETRIEVAL_DOCUMENT
-- query task: RETRIEVAL_QUERY
+- document format: title: {title} | text: {content}
+- query format: task: question answering | query: {content}
 
 理由:
 
@@ -156,13 +156,19 @@ STEP5-5:
 - Hybrid Retrieval (Vectorize + FTS5 + RRF)
 
 STEP5-6:
-- GitHub Pages管理者ダッシュボード
+- Evidence Gate
+- 根拠不足時はAIを呼ばない
+- 根拠限定AI回答
+- AI返却chunk IDをD1へ照合
 
 STEP5-7:
+- GitHub Pages管理者ダッシュボード
+
+STEP5-8:
 - Google Drive/GAS登録パイプライン
 - PDF / Word / Excel / PowerPoint対応
 
-STEP5-8:
+STEP5-9:
 - FAQチャットUIを本番RAGへ切替
 - STEP4 KV一括検索を退役
 
@@ -402,3 +408,95 @@ GAS verification:
 - testHybridRetrievalStep5
 - testHybridRetrievalParaphraseStep5
 - runHybridRetrievalSyntheticStep5
+
+
+## STEP5-6 Evidence Gate / Grounded Answer
+
+目的:
+- Vectorizeが何かを1位に返しただけでは根拠採用しない
+- 弱い検索結果では生成AIを呼ばない
+- AI回答は承認済みD1 evidenceだけに限定する
+- 出典カードはAI生成文字列ではなくD1から作る
+
+### synthetic calibration
+
+STEP5合成資料で確認した実測値:
+
+直接質問:
+- query: テスト備品Aは何曜日に確認しますか？
+- 正解 chunk vector: 0.8282954 / rank 1
+- 正解 chunk FTS: rank 1
+- distractor vector: 0.7431142 / rank 2
+- distractor FTS: rank 2
+
+言い換え:
+- query: 備品Aのチェックをする日はいつですか？
+- 正解 vector: 0.7997454 / rank 1
+- 正解 FTS: rank 1
+- distractor vector: 0.70004636 / rank 2
+- distractor FTS: none
+
+無関係:
+- query: 修学旅行の集合時間は何時ですか？
+- top vector: 0.6101101
+- second vector: 0.5521759
+- FTS: none
+
+### provisional gate
+
+実資料評価前の精度優先暫定値:
+
+Hybrid agreement:
+- vectorScore >= 0.75
+- vectorRank <= 3
+- ftsRank <= 3
+
+Strong vector only:
+- vectorRank = 1
+- FTSなし
+- vectorScore >= 0.82
+- 2位との差 >= 0.08
+
+それ以外:
+- accepted=false
+- AIを呼ばない
+- 「登録資料では確認できません。」
+
+注意:
+- これは2チャンクのsynthetic testに基づく暫定値
+- 実資料のpositive / paraphrase / negative質問セットで再調整必須
+- precision優先。迷う場合は回答しない
+
+### Grounded Answer
+
+管理API:
+- POST /admin/rag/answer-test
+
+処理:
+1. Hybrid Retrieval
+2. Evidence Gate
+3. usable evidenceなし -> AI未呼び出し
+4. usable evidenceあり -> Cerebras / Groq / Gemini fallbackへ根拠限定JSON回答を要求
+5. AI status:
+   - answer
+   - insufficient
+   - conflict
+6. AI evidenceChunkIdsを、提示済みchunk ID whitelistへ照合
+7. 不正ID・根拠IDなし・JSON不正はfail closedでinsufficient
+8. source cardsはD1 evidenceから構築
+
+AIには資料名・ページ・chunk IDを自由生成させない。
+UIに出す出典情報はD1の実在レコードだけを使用する。
+
+GAS verification:
+- testRagAnswerPositiveStep5
+- testRagAnswerParaphraseStep5
+- testRagAnswerNegativeStep5
+- runRagAnswerGateStep5
+
+期待:
+- positive -> status=answer / aiCalled=true
+- paraphrase -> status=answer / aiCalled=true
+- negative -> status=insufficient / aiCalled=false
+
+先生向け現行FAQは、この検証完了まではSTEP4 KV方式のまま維持する。
