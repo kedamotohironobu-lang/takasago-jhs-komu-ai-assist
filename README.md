@@ -1,17 +1,15 @@
-# 高砂市立高砂中学校 校務AIアシスト — STEP 5-7
+# 高砂市立高砂中学校 校務AIアシスト — STEP 6-3
 
 高砂市立高砂中学校向け「校務AIアシスト」の試作・検証リポジトリです。
 
 ## 現在の到達点
 
-- STEP 0: 要件定義・安全方針・システム構成
-- STEP 1: GitHub Pagesの公開基盤
-- STEP 2: ホーム → 入力 → 完成のUI動線
-- STEP 2.5: 10機能の業務仕様・専用プロンプト設計
-- STEP 3: Cloudflare Workers経由でCerebras → Groq → Geminiへ本番AI接続
-- STEP 4: 旧KV FAQ基盤
-- STEP 5-1〜6: D1 + Vectorize + FTS5 + RRF + Evidence Gate を実装・検証
-- STEP 5-7: GitHub Pages 管理者ダッシュボード + Google管理者認証を実装中
+- STEP 0〜3: 要件定義、GitHub Pages UI、Cloudflare Workers AI接続
+- STEP 4: 旧KV FAQ基盤（現在は退役）
+- STEP 5: D1 + Vectorize + FTS5 + RRF + Evidence Gate、本番RAG、Google管理者/職員認証、Drive同期、版管理、復旧、監査
+- STEP 6-1: 本番公開前の最終受入テスト
+- STEP 6-2: 質問本文を保存しない利用状況・定型品質フィードバック
+- STEP 6-3: 24時間運用監視・障害早期検知・匿名利用ログ180日保持
 
 ## 現在の構成
 
@@ -19,18 +17,34 @@
 先生
   ↓
 GitHub Pages
-  ↓
-Cloudflare Workers
+  ├─ 通常9機能
+  └─ 校内FAQ（Google職員認証）
+        ↓
+Cloudflare Worker
   ├─ 通常9機能 → Cerebras → Groq → Gemini
-  ├─ 旧校内FAQ → Cloudflare KV（切替前）
-  └─ 新RAG基盤
-      ├─ D1（正本・FTS5）
-      ├─ Vectorize（意味検索）
-      ├─ RRF + Evidence Gate
-      └─ 根拠ありの場合のみ Cerebras → Groq → Gemini
+  └─ 校内FAQ
+       ↓
+    Vectorize + FTS5
+       ↓
+    RRF + Evidence Gate
+       ↓
+    D1 authoritative filter
+       ↓
+    根拠ありの場合だけAI
+       ↓
+    D1由来の出典カード
+
+Google Drive
+  ↓ 原本
+GAS管理ツール
+  ↓
+D1 / Vectorize / FTS5
 ```
 
-校内FAQで検索根拠が見つからない場合は、AIへ推測させず「登録資料では確認できません」と返します。
+校内FAQで検索根拠が弱い場合はAIを呼ばず、
+「登録資料では確認できません。」と返します。
+
+利用分析では質問本文・AI回答本文・メールアドレス・IP・Tokenを保存しません。
 
 ## 搭載機能
 
@@ -63,31 +77,15 @@ GEMINI_API_KEY
 
 APIキーはGitHubへ保存しません。
 
-## STEP4 校内FAQ RAG
+## 旧STEP4 KV FAQ
 
-校内資料本文は公開GitHubへ置かず、Cloudflare KVへ非公開保存します。
+旧Cloudflare KV FAQは正式退役済みです。
 
-必要なWorker Binding:
+現在の先生向け校内FAQは、
+D1 + Vectorize + FTS5 + RRF + Evidence Gateを使用します。
 
-```text
-FAQ_KV
-```
-
-必要な実行時Secret:
-
-```text
-FAQ_ADMIN_TOKEN
-```
-
-FAQ状態確認:
-
-```text
-GET /health/faq
-```
-
-詳しい手順:
-
-- [STEP4 校内FAQ RAG](docs/STEP4_FAQ_RAG.md)
+`FAQ_KV` bindingは小規模cache/status用途への再利用余地を残していますが、
+先生向けFAQ本文の検索正本には使用しません。
 
 ## 安全設計
 
@@ -182,3 +180,10 @@ GAS管理ツールは従来どおり FAQ_ADMIN_TOKEN を使用します。
 - [STEP6-1 最終受入テスト](docs/STEP6_FINAL_ACCEPTANCE.md)
 
 管理者ダッシュボードの「✅ 最終受入テスト」から、自動受入・本番データ条件・実運用確認を一括管理します。
+
+
+## 利用品質・運用監視
+
+- [STEP6-2 / STEP6-3 利用品質・運用監視](docs/STEP6_QUALITY_OPERATIONS.md)
+
+質問本文を保存しない匿名利用集計、定型フィードバック、24時間運用監視、180日保持を実装しています。
