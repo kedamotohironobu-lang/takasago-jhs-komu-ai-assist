@@ -837,3 +837,23 @@ button{cursor:pointer}
     break-inside:avoid
   }
 }
+
+
+/* STEP6-8 / STEP6-9: automatic operations */
+.automation-panel{margin-top:16px}
+.automation-result-note{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  margin-top:12px;
+  padding:11px 12px;
+  border:1px solid #dfe8ee;
+  border-radius:12px;
+  background:#f8fbfd
+}
+.automation-result-note p{
+  margin:1px 0 0;
+  color:#687f90;
+  font-size:11px;
+  line-height:1.6
+}
