@@ -8,7 +8,14 @@
     googleClientId:'',
     idToken:sessionStorage.getItem('takasagoAdminIdToken') || '',
     authenticated:false,
-    admin:null
+    admin:null,
+    acceptance:{
+      running:false,
+      autoChecks:[],
+      readiness:null,
+      manual:{},
+      lastReport:null
+    }
   };
 
   const $ = (s) => document.querySelector(s);
@@ -57,7 +64,26 @@
     maintenanceResult:$('#maintenance-result'),
     jobsBody:$('#jobs-body'),
     refreshJobs:$('#refresh-jobs'),
-    downloadBackup:$('#download-backup')
+    downloadBackup:$('#download-backup'),
+    acceptanceAuthRequired:$('#acceptance-auth-required'),
+    acceptanceContent:$('#acceptance-content'),
+    runAcceptanceSuite:$('#run-acceptance-suite'),
+    downloadAcceptanceReport:$('#download-acceptance-report'),
+    recordAcceptanceResult:$('#record-acceptance-result'),
+    acceptanceVerdict:$('#acceptance-verdict'),
+    acceptanceAutoSummary:$('#acceptance-auto-summary'),
+    acceptanceReadinessSummary:$('#acceptance-readiness-summary'),
+    acceptanceManualSummary:$('#acceptance-manual-summary'),
+    acceptanceNote:$('#acceptance-note'),
+    acceptanceAutoBadge:$('#acceptance-auto-badge'),
+    acceptanceReadinessBadge:$('#acceptance-readiness-badge'),
+    acceptanceManualBadge:$('#acceptance-manual-badge'),
+    acceptanceProgress:$('#acceptance-progress'),
+    acceptanceProgressTitle:$('#acceptance-progress-title'),
+    acceptanceProgressText:$('#acceptance-progress-text'),
+    acceptanceAutoChecks:$('#acceptance-auto-checks'),
+    acceptanceReadinessChecks:$('#acceptance-readiness-checks'),
+    acceptanceManualChecks:$('[data-acceptance-manual]')
   };
 
   function showToast(message, ms=2600){
@@ -147,9 +173,19 @@
     if(nodes.addContent) nodes.addContent.hidden=!unlocked;
     if(nodes.driveAuthRequired) nodes.driveAuthRequired.hidden=unlocked;
     if(nodes.driveContent) nodes.driveContent.hidden=!unlocked;
+    if(nodes.acceptanceAuthRequired) nodes.acceptanceAuthRequired.hidden=unlocked;
+    if(nodes.acceptanceContent) nodes.acceptanceContent.hidden=!unlocked;
+    if(nodes.runAcceptanceSuite) nodes.runAcceptanceSuite.disabled=!unlocked || state.acceptance.running;
     if(nodes.refreshJobs) nodes.refreshJobs.disabled=!unlocked;
     if(nodes.downloadBackup) nodes.downloadBackup.disabled=!unlocked;
     if(nodes.runMaintenance) nodes.runMaintenance.disabled=!unlocked;
+    if(nodes.runAcceptanceSuite) nodes.runAcceptanceSuite.disabled=!unlocked || state.acceptance.running;
+    if(nodes.downloadAcceptanceReport) nodes.downloadAcceptanceReport.disabled=!unlocked || !state.acceptance.lastReport;
+    if(nodes.recordAcceptanceResult) nodes.recordAcceptanceResult.disabled=!unlocked || !(
+      acceptanceAutoPassed() &&
+      acceptanceReadinessPassed() &&
+      acceptanceManualPassed()
+    );
   }
 
   function renderAuthState(){
@@ -825,6 +861,632 @@
     }
   }
 
+  const ACCEPTANCE_SOURCE_ID='step5-test-step6-acceptance-v1';
+  const ACCEPTANCE_TITLE='STEP6-1 最終受入テスト';
+  const ACCEPTANCE_POSITIVE_QUERY='受入コードS61の確認日はいつですか？';
+  const ACCEPTANCE_NEGATIVE_QUERY='不存在コードS61-Z999の集合場所はどこですか？';
+  const ACCEPTANCE_MANUAL_KEY='takasagoStep61ManualAcceptance';
+  const ACCEPTANCE_MANUAL_IDS=[
+    'staff_login',
+    'real_positive',
+    'followup',
+    'real_negative',
+    'revision',
+    'maintenance',
+    'backup'
+  ];
+
+  function loadAcceptanceManualState(){
+    let saved={};
+    try{
+      saved=JSON.parse(localStorage.getItem(ACCEPTANCE_MANUAL_KEY)||'{}')||{};
+    }catch{}
+    state.acceptance.manual={};
+    for(const id of ACCEPTANCE_MANUAL_IDS){
+      state.acceptance.manual[id]=Boolean(saved[id]);
+    }
+    nodes.acceptanceManualChecks.forEach(input=>{
+      input.checked=Boolean(state.acceptance.manual[input.dataset.acceptanceManual]);
+    });
+  }
+
+  function saveAcceptanceManualState(){
+    localStorage.setItem(
+      ACCEPTANCE_MANUAL_KEY,
+      JSON.stringify(state.acceptance.manual)
+    );
+  }
+
+  function setAcceptanceProgress(title,text,visible=true){
+    if(nodes.acceptanceProgress) nodes.acceptanceProgress.hidden=!visible;
+    if(nodes.acceptanceProgressTitle) nodes.acceptanceProgressTitle.textContent=title;
+    if(nodes.acceptanceProgressText) nodes.acceptanceProgressText.textContent=text;
+  }
+
+  function acceptanceCheck(id,label,passed,detail='',required=true){
+    const item={
+      id:String(id),
+      label:String(label),
+      passed:Boolean(passed),
+      detail:String(detail||''),
+      required:Boolean(required)
+    };
+    const index=state.acceptance.autoChecks.findIndex(x=>x.id===item.id);
+    if(index>=0) state.acceptance.autoChecks[index]=item;
+    else state.acceptance.autoChecks.push(item);
+    renderAcceptanceAutoChecks();
+    updateAcceptanceVerdict();
+    return item.passed;
+  }
+
+  function renderAcceptanceAutoChecks(){
+    if(!nodes.acceptanceAutoChecks) return;
+    const checks=state.acceptance.autoChecks;
+    nodes.acceptanceAutoChecks.innerHTML=checks.map(check=>`
+      <div class="acceptance-check ${check.passed?'is-pass':'is-fail'}">
+        <span class="acceptance-check-icon">${check.passed?'✓':'!'}</span>
+        <div>
+          <strong>${escapeHtml(check.label)}</strong>
+          <p>${escapeHtml(check.detail||'')}</p>
+        </div>
+        <b>${check.passed?'PASS':'FAIL'}</b>
+      </div>
+    `).join('') || '<p class="empty-message">まだ自動テストを実行していません。</p>';
+  }
+
+  function renderAcceptanceReadiness(readiness,jobs=[]){
+    state.acceptance.readiness=readiness||null;
+    if(!nodes.acceptanceReadinessChecks) return;
+
+    const r=readiness||{};
+    const checks=r.checks||{};
+    const activeProblemJobs=(Array.isArray(jobs)?jobs:[])
+      .filter(job=>job.status==='failed' || job.stalled===true);
+
+    const rows=[
+      {
+        id:'staff_schoolwide',
+        label:'一般職員認証',
+        passed:Boolean(checks.staffAuthSchoolwide),
+        detail:checks.staffAuthSchoolwide
+          ? 'STAFF_EMAILS または STAFF_DOMAINS が設定済みです。'
+          : '一般職員向けの許可設定がまだありません。'
+      },
+      {
+        id:'real_documents',
+        label:'承認済み実資料',
+        passed:Boolean(checks.approvedDocuments),
+        detail:checks.approvedDocuments
+          ? 'テスト資料を除く承認済み有効資料があります。'
+          : 'テスト資料を除く承認済み実資料がありません。'
+      },
+      {
+        id:'real_chunks',
+        label:'実資料の検索チャンク',
+        passed:Boolean(checks.activeChunks),
+        detail:checks.activeChunks
+          ? '実資料のactive/readyチャンクがあります。'
+          : '実資料のactive/readyチャンクがありません。'
+      },
+      {
+        id:'legacy_retired',
+        label:'旧KV公開経路',
+        passed:Boolean(checks.legacyKvPublicRetired),
+        detail:checks.legacyKvPublicRetired
+          ? '旧KV FAQ公開経路は退役済みです。'
+          : '旧KV FAQ公開経路を確認してください。'
+      },
+      {
+        id:'jobs_clean',
+        label:'失敗・停滞ジョブ',
+        passed:activeProblemJobs.length===0,
+        detail:activeProblemJobs.length===0
+          ? 'failed / 24時間以上停滞のジョブはありません。'
+          : activeProblemJobs.length+'件のジョブを確認してください。'
+      }
+    ];
+
+    nodes.acceptanceReadinessChecks.innerHTML=rows.map(item=>`
+      <div class="acceptance-check ${item.passed?'is-pass':'is-fail'}">
+        <span class="acceptance-check-icon">${item.passed?'✓':'!'}</span>
+        <div>
+          <strong>${escapeHtml(item.label)}</strong>
+          <p>${escapeHtml(item.detail)}</p>
+        </div>
+        <b>${item.passed?'PASS':'要確認'}</b>
+      </div>
+    `).join('');
+
+    const passed=Boolean(r.schoolwideReady) && activeProblemJobs.length===0;
+    if(nodes.acceptanceReadinessBadge){
+      nodes.acceptanceReadinessBadge.textContent=passed?'PASS':'要確認';
+      nodes.acceptanceReadinessBadge.classList.toggle('accent',passed);
+    }
+    if(nodes.acceptanceReadinessSummary){
+      nodes.acceptanceReadinessSummary.textContent=passed?'PASS':'未完了';
+    }
+    updateAcceptanceVerdict();
+  }
+
+  function acceptanceManualPassed(){
+    return ACCEPTANCE_MANUAL_IDS.every(id=>Boolean(state.acceptance.manual[id]));
+  }
+
+  function acceptanceAutoPassed(){
+    const required=state.acceptance.autoChecks.filter(x=>x.required!==false);
+    return required.length>0 && required.every(x=>x.passed);
+  }
+
+  function acceptanceReadinessPassed(){
+    const r=state.acceptance.readiness||{};
+    return Boolean(r.schoolwideReady) &&
+      Boolean(r.checks?.approvedDocuments) &&
+      Boolean(r.checks?.activeChunks) &&
+      Boolean(r.checks?.staffAuthSchoolwide) &&
+      Boolean(r.checks?.legacyKvPublicRetired);
+  }
+
+  function buildAcceptanceReport(){
+    const manual=ACCEPTANCE_MANUAL_IDS.map(id=>({
+      id,
+      passed:Boolean(state.acceptance.manual[id])
+    }));
+    const report={
+      schema:'takasago-jhs-komu-ai-step6-acceptance-v1',
+      generatedAt:new Date().toISOString(),
+      step:'STEP6-1',
+      containsSecrets:false,
+      containsDocumentText:false,
+      automaticPassed:acceptanceAutoPassed(),
+      schoolwideReady:acceptanceReadinessPassed(),
+      manualPassed:acceptanceManualPassed(),
+      overallPassed:
+        acceptanceAutoPassed() &&
+        acceptanceReadinessPassed() &&
+        acceptanceManualPassed(),
+      automaticChecks:state.acceptance.autoChecks.map(x=>({
+        id:x.id,
+        label:x.label,
+        passed:x.passed,
+        detail:x.detail,
+        required:x.required
+      })),
+      readiness:{
+        schoolwideReady:Boolean(state.acceptance.readiness?.schoolwideReady),
+        checks:state.acceptance.readiness?.checks||{},
+        counts:state.acceptance.readiness?.counts||{},
+        warnings:state.acceptance.readiness?.warnings||[]
+      },
+      manualChecks:manual
+    };
+    state.acceptance.lastReport=report;
+    return report;
+  }
+
+  function updateAcceptanceVerdict(){
+    const auto=acceptanceAutoPassed();
+    const readiness=acceptanceReadinessPassed();
+    const manual=acceptanceManualPassed();
+    const manualCount=ACCEPTANCE_MANUAL_IDS.filter(id=>state.acceptance.manual[id]).length;
+    const overall=auto&&readiness&&manual;
+
+    if(nodes.acceptanceAutoSummary){
+      nodes.acceptanceAutoSummary.textContent=
+        state.acceptance.autoChecks.length ? (auto?'PASS':'要確認') : '未実行';
+    }
+    if(nodes.acceptanceAutoBadge){
+      nodes.acceptanceAutoBadge.textContent=
+        state.acceptance.autoChecks.length ? (auto?'PASS':'要確認') : '未実行';
+      nodes.acceptanceAutoBadge.classList.toggle('accent',auto);
+    }
+    if(nodes.acceptanceManualSummary){
+      nodes.acceptanceManualSummary.textContent=manualCount+' / '+ACCEPTANCE_MANUAL_IDS.length;
+    }
+    if(nodes.acceptanceManualBadge){
+      nodes.acceptanceManualBadge.textContent=manualCount+' / '+ACCEPTANCE_MANUAL_IDS.length;
+      nodes.acceptanceManualBadge.classList.toggle('accent',manual);
+    }
+
+    if(nodes.acceptanceVerdict){
+      nodes.acceptanceVerdict.textContent=overall
+        ? '本番公開条件を満たしています'
+        : (auto ? '本番公開条件を確認中' : '受入テスト未完了');
+      nodes.acceptanceVerdict.classList.toggle('is-pass',overall);
+    }
+
+    if(nodes.acceptanceNote){
+      if(overall){
+        nodes.acceptanceNote.textContent=
+          '自動テスト・本番データ条件・手動確認がすべてPASSです。監査ログへ合格結果を記録できます。';
+      }else if(auto && !readiness){
+        nodes.acceptanceNote.textContent=
+          'システム自体の受入テストはPASSです。実資料または一般職員認証など、本番データ条件を完了してください。';
+      }else if(auto && readiness && !manual){
+        nodes.acceptanceNote.textContent=
+          '自動条件は揃っています。実職員・実資料による手動確認をすべて完了してください。';
+      }else{
+        nodes.acceptanceNote.textContent=
+          'すべての条件が揃うまで一般職員公開の最終判定は行いません。';
+      }
+    }
+
+    if(nodes.recordAcceptanceResult) nodes.recordAcceptanceResult.disabled=!overall;
+    if(nodes.downloadAcceptanceReport){
+      nodes.downloadAcceptanceReport.disabled=
+        !state.acceptance.lastReport && state.acceptance.autoChecks.length===0;
+    }
+    if(state.acceptance.autoChecks.length){
+      buildAcceptanceReport();
+    }
+  }
+
+  async function cleanupAcceptanceSource(){
+    try{
+      await authJson('/admin/rag/test-source-cleanup',{
+        method:'POST',
+        body:JSON.stringify({sourceId:ACCEPTANCE_SOURCE_ID})
+      });
+      return true;
+    }catch(err){
+      console.warn('acceptance cleanup failed',err);
+      return false;
+    }
+  }
+
+  async function runFinalAcceptanceSuite(){
+    if(!state.authenticated){
+      showToast('管理者ログインが必要です。');
+      return;
+    }
+    if(state.acceptance.running) return;
+
+    state.acceptance.running=true;
+    state.acceptance.autoChecks=[];
+    state.acceptance.lastReport=null;
+    renderAcceptanceAutoChecks();
+    renderProtectedViews();
+
+    let acceptanceDocumentId='';
+    let cleanupPassed=false;
+
+    try{
+      setAcceptanceProgress('基盤確認','Worker・D1・Vectorize・Evidence Gate・認証を確認しています。',true);
+
+      const [worker,d1,vector,gate,readiness,staffAuth,jobsData]=await Promise.all([
+        getJson('/health'),
+        getJson('/health/rag-db'),
+        getJson('/health/rag-vector'),
+        getJson('/health/rag-gate'),
+        getJson('/health/production-readiness'),
+        getJson('/health/staff-auth'),
+        authJson('/admin/rag/jobs?limit=100')
+      ]);
+
+      acceptanceCheck(
+        'worker',
+        'Worker稼働',
+        Boolean(worker?.ok && String(worker?.version||'').startsWith('6.1')),
+        'version '+String(worker?.version||'不明')
+      );
+      acceptanceCheck(
+        'd1',
+        'D1スキーマ',
+        Boolean(d1?.ragDb?.configured && d1?.ragDb?.schemaReady),
+        d1?.ragDb?.schemaReady?'schema ready':'schemaを確認してください'
+      );
+      acceptanceCheck(
+        'vector',
+        'Vectorize / Embedding',
+        Boolean(vector?.ragVector?.configured && vector?.ragVector?.geminiEmbedding),
+        vector?.ragVector?.configured?'Vectorize接続済み':'Vectorize未設定'
+      );
+      acceptanceCheck(
+        'gate',
+        'Evidence Gate',
+        Boolean(gate?.ragGate?.configured),
+        gate?.ragGate?.configured?'有効':'設定を確認してください'
+      );
+
+      const adminMe=await authJson('/admin/auth/me');
+      acceptanceCheck(
+        'admin_auth',
+        'Google管理者認証',
+        Boolean(adminMe?.admin?.authenticated),
+        adminMe?.admin?.authenticated?'Worker検証済み':'管理者認証に失敗'
+      );
+
+      const staffMe=await authJson('/staff/auth/me');
+      acceptanceCheck(
+        'staff_auth_pilot',
+        '職員FAQ認証（管理者fallback）',
+        Boolean(staffMe?.staff?.authenticated),
+        staffMe?.staff?.authenticated?'FAQ利用者として検証済み':'職員FAQ認証に失敗'
+      );
+
+      const readinessObj=readiness?.readiness||{};
+      acceptanceCheck(
+        'ai_provider',
+        'AIプロバイダー',
+        Number(readinessObj?.counts?.aiProviders||0)>0,
+        Number(readinessObj?.counts?.aiProviders||0)+' provider'
+      );
+      acceptanceCheck(
+        'legacy_retired',
+        '旧KV公開経路の退役',
+        Boolean(readinessObj?.checks?.legacyKvPublicRetired),
+        readinessObj?.checks?.legacyKvPublicRetired?'retired':'要確認'
+      );
+
+      const jobs=Array.isArray(jobsData?.result?.jobs)?jobsData.result.jobs:[];
+      const badJobs=jobs.filter(job=>job.status==='failed' || job.stalled===true);
+      acceptanceCheck(
+        'jobs_clean',
+        '失敗・停滞ジョブなし',
+        badJobs.length===0,
+        badJobs.length===0?'問題なし':badJobs.length+'件を確認してください'
+      );
+
+      const backup=await authJson('/admin/rag/backup-manifest');
+      const manifest=backup?.result||{};
+      acceptanceCheck(
+        'backup_safety',
+        'バックアップ安全仕様',
+        manifest.containsChunkText===false && manifest.containsSecrets===false,
+        '本文・秘密情報を含まないマニフェスト'
+      );
+
+      renderAcceptanceReadiness(readinessObj,jobs);
+
+      setAcceptanceProgress('前回テストの後片付け','同じ受入テスト資料が残っていない状態にします。',true);
+      await cleanupAcceptanceSource();
+
+      setAcceptanceProgress('架空資料を登録','STEP6-1専用の架空資料をD1へstagingしています。',true);
+      const staged=await authJson('/admin/rag/stage',{
+        method:'POST',
+        body:JSON.stringify({
+          sourceId:ACCEPTANCE_SOURCE_ID,
+          sourceType:'upload',
+          fileName:'STEP6-1_最終受入テスト.txt',
+          title:ACCEPTANCE_TITLE,
+          mimeType:'text/plain',
+          categoryId:'cat-other',
+          ownerDepartment:'STEP6-1自動受入',
+          versionLabel:'acceptance-v1',
+          approved:true,
+          sections:[{
+            headingPath:'最終受入 > 受入コードS61',
+            text:[
+              'これはSTEP6-1最終受入確認専用の架空資料です。',
+              '受入コードS61の確認日は木曜日です。',
+              '確認後は受入記録欄に「完了」と記載します。',
+              '実際の校内規則ではありません。'
+            ].join('\n\n')
+          }]
+        })
+      });
+      acceptanceDocumentId=String(staged?.result?.documentId||'');
+      acceptanceCheck(
+        'stage',
+        '架空資料のstaging',
+        Boolean(acceptanceDocumentId),
+        acceptanceDocumentId?'document作成済み':'documentIdを取得できません'
+      );
+      if(!acceptanceDocumentId) throw new Error('受入テスト用documentIdを取得できませんでした。');
+
+      setAcceptanceProgress('Embedding・Vectorize','架空資料を検索可能な状態まで処理しています。',true);
+      await completeDocumentActivation(acceptanceDocumentId,'STEP6-1受入資料');
+      acceptanceCheck(
+        'activate',
+        'Embedding・Vectorize・FTS5・有効化',
+        true,
+        'active/currentまで完了'
+      );
+
+      setAcceptanceProgress('検索テスト','Hybrid検索とEvidence Gateを確認しています。',true);
+      const positiveSearch=await authJson('/admin/rag/retrieval-test',{
+        method:'POST',
+        body:JSON.stringify({query:ACCEPTANCE_POSITIVE_QUERY})
+      });
+      const positiveResult=positiveSearch?.result||{};
+      const positiveEvidence=Array.isArray(positiveResult?.evidence)?positiveResult.evidence:[];
+      const evidenceOwn=positiveEvidence.some(ev=>
+        String(ev?.sourceId||'')===ACCEPTANCE_SOURCE_ID ||
+        String(ev?.title||'')===ACCEPTANCE_TITLE
+      );
+      acceptanceCheck(
+        'positive_retrieval',
+        'Hybrid検索・Evidence Gate',
+        Boolean(positiveResult?.hasUsableEvidence && evidenceOwn),
+        positiveResult?.hasUsableEvidence?'受入資料を根拠として採用':'根拠を採用できませんでした'
+      );
+
+      setAcceptanceProgress('AI回答テスト','根拠付き回答と出典カードを確認しています。',true);
+      const answerData=await authJson('/admin/rag/answer-test',{
+        method:'POST',
+        body:JSON.stringify({query:ACCEPTANCE_POSITIVE_QUERY})
+      });
+      const answer=answerData?.result||{};
+      const answerSources=Array.isArray(answer?.sources)?answer.sources:[];
+      const answerSourceOwn=answerSources.some(src=>
+        String(src?.sourceId||'')===ACCEPTANCE_SOURCE_ID ||
+        String(src?.title||'')===ACCEPTANCE_TITLE
+      );
+      const answerOk=
+        answer.status==='answer' &&
+        answer.aiCalled===true &&
+        String(answer.answer||'').includes('木曜日') &&
+        answerSourceOwn;
+      acceptanceCheck(
+        'grounded_answer',
+        'AI回答・根拠資料カード',
+        answerOk,
+        answerOk
+          ? '「木曜日」を回答し、D1由来の受入資料を出典に採用'
+          : '回答内容または根拠資料を確認してください'
+      );
+
+      setAcceptanceProgress('拒否テスト','登録資料にない質問でAIを呼ばないことを確認しています。',true);
+      const negativeData=await authJson('/admin/rag/answer-test',{
+        method:'POST',
+        body:JSON.stringify({query:ACCEPTANCE_NEGATIVE_QUERY})
+      });
+      const negative=negativeData?.result||{};
+      const negativeOk=
+        negative.status==='insufficient' &&
+        negative.aiCalled===false;
+      acceptanceCheck(
+        'negative_gate',
+        '未登録質問の拒否',
+        negativeOk,
+        negativeOk
+          ? 'Evidence Gateで停止しAI未呼び出し'
+          : '未登録質問への挙動を確認してください'
+      );
+
+      setAcceptanceProgress('論理削除テスト','検索対象から外れることを確認しています。',true);
+      await authJson('/admin/rag/document-delete',{
+        method:'POST',
+        body:JSON.stringify({documentId:acceptanceDocumentId})
+      });
+      await new Promise(resolve=>setTimeout(resolve,900));
+      const afterDeleteData=await authJson('/admin/rag/retrieval-test',{
+        method:'POST',
+        body:JSON.stringify({query:ACCEPTANCE_POSITIVE_QUERY})
+      });
+      const afterDelete=afterDeleteData?.result||{};
+      acceptanceCheck(
+        'soft_delete',
+        '論理削除後の検索除外',
+        afterDelete.hasUsableEvidence===false,
+        afterDelete.hasUsableEvidence===false
+          ? '削除済み資料は検索根拠になりません'
+          : '削除後も検索されるため要確認'
+      );
+
+      setAcceptanceProgress('復旧テスト','同じrevisionを再Embeddingして戻しています。',true);
+      await authJson('/admin/rag/document-restore',{
+        method:'POST',
+        body:JSON.stringify({documentId:acceptanceDocumentId})
+      });
+      await completeDocumentActivation(acceptanceDocumentId,'STEP6-1復旧資料');
+      const afterRestoreData=await authJson('/admin/rag/retrieval-test',{
+        method:'POST',
+        body:JSON.stringify({query:ACCEPTANCE_POSITIVE_QUERY})
+      });
+      const afterRestore=afterRestoreData?.result||{};
+      acceptanceCheck(
+        'restore',
+        '論理削除からの復旧',
+        Boolean(afterRestore.hasUsableEvidence),
+        afterRestore.hasUsableEvidence
+          ? '再Embedding後に検索へ復帰'
+          : '復旧後の検索を確認してください'
+      );
+
+    }catch(err){
+      console.error('STEP6-1 acceptance failed',err);
+      acceptanceCheck(
+        'suite_runtime',
+        '自動受入テスト実行',
+        false,
+        err?.message||'受入テスト中にエラーが発生しました。'
+      );
+    }finally{
+      setAcceptanceProgress('後片付け','受入確認用の架空資料を削除しています。',true);
+      cleanupPassed=await cleanupAcceptanceSource();
+      acceptanceCheck(
+        'cleanup',
+        '架空受入資料の後片付け',
+        cleanupPassed,
+        cleanupPassed?'D1・FTS5・Vectorizeのテスト資料を削除':'テスト資料の後片付けを確認してください'
+      );
+
+      state.acceptance.running=false;
+      renderProtectedViews();
+
+      try{
+        const [readiness,jobsData]=await Promise.all([
+          getJson('/health/production-readiness'),
+          authJson('/admin/rag/jobs?limit=100')
+        ]);
+        renderAcceptanceReadiness(
+          readiness?.readiness||{},
+          Array.isArray(jobsData?.result?.jobs)?jobsData.result.jobs:[]
+        );
+      }catch(err){
+        console.warn('acceptance readiness refresh failed',err);
+      }
+
+      buildAcceptanceReport();
+      updateAcceptanceVerdict();
+      if(nodes.downloadAcceptanceReport) nodes.downloadAcceptanceReport.disabled=false;
+
+      const passed=acceptanceAutoPassed();
+      setAcceptanceProgress(
+        passed?'自動受入テスト PASS':'自動受入テスト 要確認',
+        passed
+          ? '架空資料による登録・検索・回答・拒否・削除・復旧・後片付けまで完了しました。'
+          : 'FAIL項目を確認してください。実資料には影響していません。',
+        true
+      );
+
+      await Promise.allSettled([loadDocuments(),loadJobs(),loadAuditLogs(),refreshAll()]);
+    }
+  }
+
+  function downloadAcceptanceReport(){
+    const report=buildAcceptanceReport();
+    const blob=new Blob(
+      [JSON.stringify(report,null,2)],
+      {type:'application/json;charset=utf-8'}
+    );
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const stamp=new Date().toISOString().replace(/[:.]/g,'-');
+    a.href=url;
+    a.download='takasago-jhs-step6-1-acceptance-'+stamp+'.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    showToast('STEP6-1受入レポートを保存しました。',3600);
+  }
+
+  async function recordAcceptanceResult(){
+    const report=buildAcceptanceReport();
+    if(!report.overallPassed){
+      showToast('すべての本番公開条件がPASSになるまで合格記録はできません。',4200);
+      return;
+    }
+
+    try{
+      const checks=[
+        ...report.automaticChecks.map(x=>({id:'auto:'+x.id,passed:x.passed})),
+        ...Object.entries(report.readiness.checks||{}).map(([id,passed])=>({
+          id:'readiness:'+id,
+          passed:Boolean(passed)
+        })),
+        ...report.manualChecks.map(x=>({id:'manual:'+x.id,passed:x.passed}))
+      ];
+
+      await authJson('/admin/rag/acceptance-record',{
+        method:'POST',
+        body:JSON.stringify({
+          status:'passed',
+          automaticPassed:report.automaticPassed,
+          manualPassed:report.manualPassed,
+          schoolwideReady:report.schoolwideReady,
+          checks
+        })
+      });
+      showToast('STEP6-1合格結果を監査ログへ記録しました。',4200);
+      await loadAuditLogs();
+    }catch(err){
+      console.error(err);
+      showToast(err?.message||'受入結果を記録できませんでした。',4200);
+    }
+  }
+
   function renderHealth(worker,d1,vector,gate){
     const workerOk=Boolean(worker?.ok);
     const d1Ok=Boolean(d1?.ragDb?.configured && d1?.ragDb?.schemaReady);
@@ -936,6 +1598,16 @@
   nodes.refreshAudit?.addEventListener('click',loadAuditLogs);
   nodes.refreshJobs?.addEventListener('click',loadJobs);
   nodes.downloadBackup?.addEventListener('click',downloadBackupManifest);
+  nodes.runAcceptanceSuite?.addEventListener('click',runFinalAcceptanceSuite);
+  nodes.downloadAcceptanceReport?.addEventListener('click',downloadAcceptanceReport);
+  nodes.recordAcceptanceResult?.addEventListener('click',recordAcceptanceResult);
+  nodes.acceptanceManualChecks.forEach(input=>{
+    input.addEventListener('change',()=>{
+      state.acceptance.manual[input.dataset.acceptanceManual]=Boolean(input.checked);
+      saveAcceptanceManualState();
+      updateAcceptanceVerdict();
+    });
+  });
 
   nodes.documentsBody?.addEventListener('click',(event)=>{
     const deleteButton=event.target.closest('.delete-document');
@@ -982,10 +1654,14 @@
     if(nodes.jobsBody) nodes.jobsBody.innerHTML='<tr><td colspan="5">管理者ログイン後に表示します。</td></tr>';
     if(nodes.driveSyncBody) nodes.driveSyncBody.innerHTML='<tr><td colspan="5">管理者ログイン後に表示します。</td></tr>';
     if(nodes.searchResultGrid) nodes.searchResultGrid.hidden=true;
+    state.acceptance.running=false;
     renderAuthState();
     renderGoogleButton();
     showToast('ログアウトしました。');
   });
+
+  loadAcceptanceManualState();
+  updateAcceptanceVerdict();
 
   const existingTestId=sessionStorage.getItem('step58AdminTestDocumentId');
   if(existingTestId && nodes.cleanupAdminTest) nodes.cleanupAdminTest.hidden=false;
