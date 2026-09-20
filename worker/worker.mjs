@@ -10,12 +10,17 @@ import {
   finalizeRagDocument,
   getRagSourceState,
   markRagSourceMissing,
+  softDeleteRagDocument,
+  restoreRagDocument,
+  listRagJobs,
+  retryRagJob,
+  buildRagBackupManifest,
   runRagMaintenance,
   cleanupRagTestDocument,
   cleanupRagTestSource
 } from './rag-store.mjs';
 
-const WORKER_VERSION = '5.12.0';
+const WORKER_VERSION = '5.13.0';
 
 const COMMON_SYSTEM_PROMPT = `あなたは中学校教職員の校務を支援する文章作成アシスタントです。日本語で、明確で丁寧な、すぐに編集して使える案を作ります。
 提供された事実と提案を区別してください。氏名・役職・組織名・日付・時刻・金額・期限・連絡先を推測して補わないでください。未記載の必要事項は【要確認：項目名】としてください。年が示されていない日付には曜日を付けないでください。入力にない場所・連絡方法・締切・担当者等を「未定」と断定せず、【要確認：項目名】として扱ってください。相対日付を勝手に絶対日付へ変換しないでください。
@@ -1312,6 +1317,80 @@ export default {
         return json({ok:true,result},200,origin || '*');
       } catch (e) {
         return json({ok:false,error:{code:e?.code || 'RAG_DOCUMENT_LIST_FAILED',message:String(e?.message || '資料一覧を取得できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/document-delete') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      const body = await readJsonBody(request);
+      const documentId = String(body?.documentId || '');
+      if (!documentId) return json({ok:false,error:{code:'DOCUMENT_ID_REQUIRED',message:'documentId が必要です。'}},400,origin || '*');
+      try {
+        const result = await softDeleteRagDocument(env, documentId, auth.email || 'faq-admin');
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_DOCUMENT_DELETE_FAILED',message:String(e?.message || '資料を検索対象から外せませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/document-restore') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      const body = await readJsonBody(request);
+      const documentId = String(body?.documentId || '');
+      if (!documentId) return json({ok:false,error:{code:'DOCUMENT_ID_REQUIRED',message:'documentId が必要です。'}},400,origin || '*');
+      try {
+        const result = await restoreRagDocument(env, documentId, auth.email || 'faq-admin');
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_DOCUMENT_RESTORE_FAILED',message:String(e?.message || '資料の復旧を開始できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/rag/jobs') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      try {
+        const result = await listRagJobs(env, url.searchParams.get('limit') || 100);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_JOB_LIST_FAILED',message:String(e?.message || '同期ジョブ一覧を取得できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/job-retry') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      const body = await readJsonBody(request);
+      const jobId = String(body?.jobId || '');
+      if (!jobId) return json({ok:false,error:{code:'JOB_ID_REQUIRED',message:'jobId が必要です。'}},400,origin || '*');
+      try {
+        const result = await retryRagJob(env, jobId, auth.email || 'faq-admin');
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_JOB_RETRY_FAILED',message:String(e?.message || '同期ジョブを再試行できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/rag/backup-manifest') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      try {
+        const result = await buildRagBackupManifest(env);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_BACKUP_MANIFEST_FAILED',message:String(e?.message || 'バックアップマニフェストを作成できませんでした。')}},e?.status || 500,origin || '*');
       }
     }
 
