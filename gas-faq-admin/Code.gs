@@ -664,6 +664,9 @@ function runRagAnswerGateStep5() {
  * STEP5-8: Google Drive -> D1 -> Vectorize -> FTS5
  * ========================================================= */
 
+const STEP5_DAILY_MAINTENANCE_HANDLER = 'runDailyRagMaintenanceStep5';
+const STEP5_LAST_MAINTENANCE_PROPERTY = 'STEP5_LAST_MAINTENANCE_JSON';
+
 const STEP5_LAST_DOCUMENT_PROPERTY = 'STEP5_LAST_DOCUMENT_ID';
 const STEP5_MAX_INDEX_BATCHES_PER_RUN = 8;
 
@@ -699,6 +702,116 @@ function checkDriveConversionStep5() {
       error: String(e && e.message ? e.message : e)
     };
   }
+}
+
+function runDailyRagMaintenanceStep5() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'maintenance_already_running'
+    };
+  }
+
+  try {
+    const result = {
+      ok: true,
+      ranAt: new Date().toISOString(),
+      worker: null,
+      drive: null,
+      errors: []
+    };
+
+    try {
+      const worker = workerRequest_('/admin/rag/maintenance', 'post', {}, true);
+      result.worker = worker && worker.result ? worker.result : worker;
+    } catch (e) {
+      result.errors.push('Worker maintenance: ' + String(e.message || e));
+    }
+
+    try {
+      const scan = scanDriveSyncStep5();
+      result.drive = {
+        folderName: scan.folderName || '',
+        counts: scan.counts || {
+          total: 0,
+          changed: 0,
+          new: 0,
+          unchanged: 0,
+          missing: 0
+        }
+      };
+    } catch (e) {
+      result.errors.push('Drive scan: ' + String(e.message || e));
+    }
+
+    result.ok = result.errors.length === 0;
+
+    PropertiesService.getScriptProperties().setProperty(
+      STEP5_LAST_MAINTENANCE_PROPERTY,
+      JSON.stringify(result)
+    );
+
+    console.log(JSON.stringify(result, null, 2));
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getDailyMaintenanceStatusStep5() {
+  const triggers = ScriptApp.getProjectTriggers().filter(function (trigger) {
+    return trigger.getHandlerFunction() === STEP5_DAILY_MAINTENANCE_HANDLER;
+  });
+
+  let last = null;
+  const raw = String(
+    PropertiesService.getScriptProperties()
+      .getProperty(STEP5_LAST_MAINTENANCE_PROPERTY) || ''
+  ).trim();
+
+  if (raw) {
+    try {
+      last = JSON.parse(raw);
+    } catch (e) {
+      last = { ok: false, errors: ['保存済みメンテナンス結果を読み取れませんでした。'] };
+    }
+  }
+
+  return {
+    ok: true,
+    enabled: triggers.length > 0,
+    triggerCount: triggers.length,
+    schedule: triggers.length ? '毎日 6時台（Asia/Tokyo）' : '',
+    last: last
+  };
+}
+
+function installDailyMaintenanceTriggerStep5() {
+  removeDailyMaintenanceTriggersStep5_();
+
+  ScriptApp.newTrigger(STEP5_DAILY_MAINTENANCE_HANDLER)
+    .timeBased()
+    .atHour(6)
+    .everyDays(1)
+    .inTimezone('Asia/Tokyo')
+    .create();
+
+  return getDailyMaintenanceStatusStep5();
+}
+
+function uninstallDailyMaintenanceTriggerStep5() {
+  removeDailyMaintenanceTriggersStep5_();
+  return getDailyMaintenanceStatusStep5();
+}
+
+function removeDailyMaintenanceTriggersStep5_() {
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (trigger.getHandlerFunction() === STEP5_DAILY_MAINTENANCE_HANDLER) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
 }
 
 function getRagAdminStateStep5() {
