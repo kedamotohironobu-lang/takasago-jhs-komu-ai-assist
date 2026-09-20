@@ -625,6 +625,89 @@ function ragVectorStatus(env) {
   };
 }
 
+async function listRagDocumentsForAdmin(env) {
+  if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
+    throw Object.assign(new Error('RAG_DB が設定されていません。'), { code:'RAG_DB_NOT_CONFIGURED', status:503 });
+  }
+
+  const rows = await env.RAG_DB.prepare(`
+    SELECT
+      d.document_id,
+      d.source_id,
+      d.revision_no,
+      d.is_current,
+      d.source_type,
+      d.file_name,
+      d.title,
+      d.mime_type,
+      d.category_id,
+      c.name AS category_name,
+      d.owner_department,
+      d.version_label,
+      d.file_size_bytes,
+      d.page_count,
+      d.sheet_count,
+      d.slide_count,
+      d.valid_from,
+      d.valid_until,
+      d.approval_status,
+      d.status,
+      d.extraction_status,
+      d.extracted_char_count,
+      d.chunk_count,
+      d.vector_status,
+      d.source_modified_at,
+      d.last_synced_at,
+      d.created_at,
+      d.updated_at,
+      d.deleted_at,
+      SUM(CASE WHEN ch.is_active=1 THEN 1 ELSE 0 END) AS active_chunk_count,
+      SUM(CASE WHEN ch.embedding_status='ready' THEN 1 ELSE 0 END) AS ready_chunk_count
+    FROM documents d
+    LEFT JOIN categories c ON c.category_id=d.category_id
+    LEFT JOIN chunks ch ON ch.document_id=d.document_id
+    GROUP BY d.document_id
+    ORDER BY d.is_current DESC, d.updated_at DESC
+    LIMIT 200
+  `).all();
+
+  return {
+    documents:(rows?.results || []).map(row => ({
+      documentId:String(row.document_id || ''),
+      sourceId:String(row.source_id || ''),
+      revisionNo:Number(row.revision_no || 1),
+      isCurrent:Number(row.is_current || 0) === 1,
+      sourceType:String(row.source_type || ''),
+      fileName:String(row.file_name || ''),
+      title:String(row.title || ''),
+      mimeType:String(row.mime_type || ''),
+      categoryId:String(row.category_id || ''),
+      categoryName:String(row.category_name || ''),
+      ownerDepartment:String(row.owner_department || ''),
+      versionLabel:String(row.version_label || ''),
+      fileSizeBytes:Number(row.file_size_bytes || 0),
+      pageCount:Number(row.page_count || 0),
+      sheetCount:Number(row.sheet_count || 0),
+      slideCount:Number(row.slide_count || 0),
+      validFrom:String(row.valid_from || ''),
+      validUntil:String(row.valid_until || ''),
+      approvalStatus:String(row.approval_status || ''),
+      status:String(row.status || ''),
+      extractionStatus:String(row.extraction_status || ''),
+      extractedCharCount:Number(row.extracted_char_count || 0),
+      chunkCount:Number(row.chunk_count || 0),
+      activeChunkCount:Number(row.active_chunk_count || 0),
+      readyChunkCount:Number(row.ready_chunk_count || 0),
+      vectorStatus:String(row.vector_status || ''),
+      sourceModifiedAt:String(row.source_modified_at || ''),
+      lastSyncedAt:String(row.last_synced_at || ''),
+      createdAt:String(row.created_at || ''),
+      updatedAt:String(row.updated_at || ''),
+      deletedAt:String(row.deleted_at || '')
+    }))
+  };
+}
+
 async function ragDashboardStatus(env) {
   if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
     return {
@@ -861,6 +944,19 @@ export default {
         return json({ok:true,result},200,origin || '*');
       } catch (e) {
         return json({ok:false,error:{code:e?.code || 'RAG_TEST_CLEANUP_FAILED',message:String(e?.message || 'RAG test cleanup failed')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/rag/documents') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      try {
+        const result = await listRagDocumentsForAdmin(env);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_DOCUMENT_LIST_FAILED',message:String(e?.message || '資料一覧を取得できませんでした。')}},e?.status || 500,origin || '*');
       }
     }
 
