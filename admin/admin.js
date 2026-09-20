@@ -423,22 +423,22 @@
 
   async function cleanupAdminSyntheticTest(){
     if(!state.authenticated) return;
-    const documentId=String(sessionStorage.getItem('step58AdminTestDocumentId')||'');
-    if(!documentId){
-      showToast('このブラウザに削除対象のdocumentIdがありません。');
-      return;
-    }
 
     if(nodes.cleanupAdminTest) nodes.cleanupAdminTest.disabled=true;
     try{
-      await authJson('/admin/rag/test-cleanup',{
+      const data=await authJson('/admin/rag/test-source-cleanup',{
         method:'POST',
-        body:JSON.stringify({documentId})
+        body:JSON.stringify({sourceId:'step5-test-admin-v1'})
       });
       sessionStorage.removeItem('step58AdminTestDocumentId');
       if(nodes.cleanupAdminTest) nodes.cleanupAdminTest.hidden=true;
-      setAdminRegisterProgress('削除完了','接続確認用の架空資料をD1・Vectorize・FTS5から削除しました。',true);
-      showToast('テスト資料を削除しました。');
+      const r=data?.result||{};
+      setAdminRegisterProgress(
+        '削除完了',
+        '接続確認用テストsourceの全revisionを削除しました。資料 '+(r.deletedDocuments||0)+'件 / Vector '+(r.deletedVectors||0)+'件。',
+        true
+      );
+      showToast('テスト資料の全revisionを削除しました。');
       await Promise.allSettled([loadDocuments(),refreshAll()]);
     }catch(err){
       console.error(err);
