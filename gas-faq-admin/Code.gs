@@ -265,7 +265,7 @@ function supportInfo_(mimeType) {
   return map[mimeType] || {
     supported: false,
     label: mimeType || '不明',
-    note: 'V1では未対応です。PDF・Word・Excel・PowerPointは、まずGoogleドキュメント／スプレッドシート／スライドへ変換してください。'
+    note: 'PDF・Word・Excel・PowerPointの直接抽出はSTEP5-8後半で追加します。現在はGoogle形式へ変換した資料を登録してください。'
   };
 }
 
@@ -1139,7 +1139,7 @@ function extractGoogleDocSectionsStep5_(fileId) {
     const text = buffer.join('\n\n').trim();
     if (text) {
       sections.push({
-        headingPath: headingPath.length ? headingPath.join(' > ') : '本文',
+        headingPath: headingPath.filter(Boolean).length ? headingPath.filter(Boolean).join(' > ') : '本文',
         text: text
       });
     }
