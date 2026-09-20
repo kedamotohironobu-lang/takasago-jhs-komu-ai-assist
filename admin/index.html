@@ -177,10 +177,49 @@
 
       <section class="admin-view" data-view-panel="add" hidden>
         <div class="section-head"><div><p class="eyebrow">REGISTER</p><h2>資料を追加</h2></div></div>
-        <div class="locked-panel">
-          <div class="locked-icon">➕</div>
-          <h3>Drive / ファイル登録画面</h3>
-          <p>PDF・Word・Excel・PowerPoint・Googleファイルを登録し、ページやシートを選択して承認する画面を次段階で接続します。</p>
+
+        <div class="auth-required-panel" id="add-auth-required">
+          <div class="locked-icon">🔒</div>
+          <h3>管理者ログインが必要です</h3>
+          <p>ログイン後、登録パイプラインの接続確認とDrive登録を行えます。</p>
+        </div>
+
+        <div id="add-content" hidden>
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
+                <h3>STEP5-8 接続確認用テスト資料</h3>
+                <p class="panel-description">実際の校内規則ではない架空資料を、D1 → Gemini Embedding → Vectorize → FTS5へ登録します。</p>
+              </div>
+              <span class="panel-badge accent">安全なテスト</span>
+            </div>
+
+            <div class="test-document-preview">
+              <strong>STEP5-8 管理画面登録テスト</strong>
+              <p>これは登録確認用の架空資料です。<br>
+              テスト備品Cの確認日は水曜日です。<br>
+              確認後はテスト記録欄に「確認済み」と記載します。<br>
+              実際の校内規則ではありません。</p>
+            </div>
+
+            <div class="register-actions">
+              <button class="admin-primary" id="register-admin-test" type="button">テスト資料を新RAGへ登録</button>
+              <button class="admin-danger" id="cleanup-admin-test" type="button" hidden>テスト資料を削除</button>
+            </div>
+
+            <div class="pipeline-progress" id="admin-register-progress" hidden>
+              <strong id="admin-register-title">処理中</strong>
+              <p id="admin-register-text"></p>
+            </div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>Google Driveから登録</h3>
+              <span class="panel-badge">STEP5-8</span>
+            </div>
+            <p class="panel-description">Google Drive＋GASの登録ツールは新RAG対応版まで実装済みです。接続確認が終わった後、実資料登録へ進みます。</p>
+          </article>
         </div>
       </section>
 
