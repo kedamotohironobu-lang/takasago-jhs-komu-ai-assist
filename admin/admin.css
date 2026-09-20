@@ -169,3 +169,10 @@ button{cursor:pointer}
   .search-result-grid .wide{grid-column:auto}
   .search-row button{min-height:46px}
 }
+
+/* hidden属性をauthor CSSが上書きしないよう固定 */
+.auth-actions [hidden],
+.signed-user[hidden],
+#google-signin[hidden]{
+  display:none!important;
+}
