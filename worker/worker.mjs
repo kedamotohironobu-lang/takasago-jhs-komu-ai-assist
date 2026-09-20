@@ -20,7 +20,7 @@ import {
   cleanupRagTestSource
 } from './rag-store.mjs';
 
-const WORKER_VERSION = '5.13.0';
+const WORKER_VERSION = '6.1.0';
 
 const COMMON_SYSTEM_PROMPT = `あなたは中学校教職員の校務を支援する文章作成アシスタントです。日本語で、明確で丁寧な、すぐに編集して使える案を作ります。
 提供された事実と提案を区別してください。氏名・役職・組織名・日付・時刻・金額・期限・連絡先を推測して補わないでください。未記載の必要事項は【要確認：項目名】としてください。年が示されていない日付には曜日を付けないでください。入力にない場所・連絡方法・締切・担当者等を「未定」と断定せず、【要確認：項目名】として扱ってください。相対日付を勝手に絶対日付へ変換しないでください。
@@ -1378,6 +1378,62 @@ export default {
         return json({ok:true,result},200,origin || '*');
       } catch (e) {
         return json({ok:false,error:{code:e?.code || 'RAG_JOB_RETRY_FAILED',message:String(e?.message || '同期ジョブを再試行できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/acceptance-record') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
+        return json({ok:false,error:{code:'RAG_DB_NOT_CONFIGURED',message:'RAG_DB が設定されていません。'}},503,origin || '*');
+      }
+
+      const body = await readJsonBody(request);
+      const status = String(body?.status || '');
+      const allowedStatus = new Set(['passed','blocked','failed']);
+      if (!allowedStatus.has(status)) {
+        return json({ok:false,error:{code:'INVALID_ACCEPTANCE_STATUS',message:'受入結果のstatusが正しくありません。'}},400,origin || '*');
+      }
+
+      const safeChecks = Array.isArray(body?.checks)
+        ? body.checks.slice(0,80).map(item => ({
+            id:String(item?.id || '').slice(0,120),
+            passed:Boolean(item?.passed)
+          }))
+        : [];
+
+      const metadata = {
+        step:'STEP6-1',
+        workerVersion:WORKER_VERSION,
+        status,
+        automaticPassed:Boolean(body?.automaticPassed),
+        manualPassed:Boolean(body?.manualPassed),
+        schoolwideReady:Boolean(body?.schoolwideReady),
+        checks:safeChecks
+      };
+
+      try {
+        const logId = 'log-' + crypto.randomUUID();
+        await env.RAG_DB.prepare(`
+          INSERT INTO audit_logs (
+            log_id,occurred_at,actor_id,action,entity_type,entity_id,
+            summary,metadata_json
+          )
+          VALUES (?,CURRENT_TIMESTAMP,?,'acceptance_run_recorded','system','STEP6-1',?,?)
+        `).bind(
+          logId,
+          auth.email || 'faq-admin',
+          status === 'passed'
+            ? 'STEP6-1 最終受入テストを合格として記録'
+            : 'STEP6-1 最終受入テスト結果を記録: ' + status,
+          JSON.stringify(metadata)
+        ).run();
+
+        return json({ok:true,result:{logId,status,recordedAt:new Date().toISOString()}},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:'ACCEPTANCE_RECORD_FAILED',message:String(e?.message || '受入結果を記録できませんでした。')}},500,origin || '*');
       }
     }
 
