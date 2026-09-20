@@ -201,7 +201,9 @@ async function stageRagDocument(env, payload, actorId = 'faq-admin') {
     valid.sourceId
   );
   const previous = await queryOne(db, `
-    SELECT document_id,revision_no,content_hash_sha256,source_modified_at,status
+    SELECT
+      document_id,revision_no,content_hash_sha256,source_modified_at,status,
+      title,file_name,mime_type,category_id,owner_department,valid_from,valid_until
     FROM documents
     WHERE source_id=? AND is_current=1
     LIMIT 1
@@ -212,6 +214,64 @@ async function stageRagDocument(env, payload, actorId = 'faq-admin') {
   const jobId = `job-${crypto.randomUUID()}`;
   const logId = `log-${crypto.randomUUID()}`;
   const contentHash = await sha256Hex(valid.chunked.sections.map(s => s.text).join('\n\n'));
+
+  if (previous?.document_id && previous.status === 'active') {
+    const sameContent =
+      Boolean(previous.content_hash_sha256) &&
+      String(previous.content_hash_sha256) === contentHash;
+
+    const sameMetadata =
+      String(previous.title || '') === String(valid.title || '') &&
+      String(previous.file_name || '') === String(valid.fileName || '') &&
+      String(previous.mime_type || '') === String(valid.mimeType || '') &&
+      String(previous.category_id || '') === String(valid.categoryId || '') &&
+      String(previous.owner_department || '') === String(valid.ownerDepartment || '') &&
+      String(previous.valid_from || '') === String(valid.validFrom || '') &&
+      String(previous.valid_until || '') === String(valid.validUntil || '');
+
+    if (sameContent && sameMetadata) {
+      const logId = `log-${crypto.randomUUID()}`;
+      await db.batch([
+        db.prepare(`
+          UPDATE documents
+          SET source_modified_at=?,
+              file_size_bytes=?,
+              last_synced_at=CURRENT_TIMESTAMP,
+              updated_at=CURRENT_TIMESTAMP
+          WHERE document_id=?
+        `).bind(
+          valid.sourceModifiedAt || previous.source_modified_at || null,
+          valid.fileSizeBytes,
+          previous.document_id
+        ),
+        db.prepare(`
+          INSERT INTO audit_logs (
+            log_id,occurred_at,actor_id,action,entity_type,entity_id,summary,metadata_json
+          )
+          VALUES (?,CURRENT_TIMESTAMP,?,'source_unchanged','document',?,?,?)
+        `).bind(
+          logId,actorId,previous.document_id,
+          `「${valid.title}」は本文変更なしのため再Embeddingを省略`,
+          JSON.stringify({
+            sourceId:valid.sourceId,
+            revisionNo:Number(previous.revision_no || 1),
+            sourceModifiedAt:valid.sourceModifiedAt || null,
+            contentHash
+          })
+        )
+      ]);
+
+      return {
+        ok:true,
+        skipped:true,
+        reason:'content_unchanged',
+        documentId:previous.document_id,
+        sourceId:valid.sourceId,
+        revisionNo:Number(previous.revision_no || 1),
+        message:'本文内容に変更がないため、新版作成と再Embeddingを省略しました。'
+      };
+    }
+  }
 
   const chunks = await Promise.all(valid.chunked.chunks.map(async c => {
     const chunkId = `${documentId}-c${String(c.chunkNo).padStart(4, '0')}`;
