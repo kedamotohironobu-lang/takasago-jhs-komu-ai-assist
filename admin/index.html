@@ -145,11 +145,33 @@
       </section>
 
       <section class="admin-view" data-view-panel="materials" hidden>
-        <div class="section-head"><div><p class="eyebrow">DOCUMENTS</p><h2>資料管理</h2></div></div>
-        <div class="locked-panel">
+        <div class="section-head">
+          <div><p class="eyebrow">DOCUMENTS</p><h2>資料管理</h2></div>
+          <button class="refresh-button" type="button" id="refresh-documents">↻ 一覧更新</button>
+        </div>
+        <div class="auth-required-panel" id="materials-auth-required">
           <div class="locked-icon">🔒</div>
-          <h3>管理者認証設定後に有効化します</h3>
-          <p>資料名、版、承認状態、有効期間、チャンク数、同期状態を一覧管理する画面です。</p>
+          <h3>管理者ログインが必要です</h3>
+          <p>ログイン後、D1に登録されている資料のメタデータを確認できます。</p>
+        </div>
+        <div id="materials-content" hidden>
+          <div class="table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>資料名</th>
+                  <th>カテゴリ</th>
+                  <th>版</th>
+                  <th>状態</th>
+                  <th>承認</th>
+                  <th>チャンク</th>
+                  <th>更新</th>
+                </tr>
+              </thead>
+              <tbody id="documents-body"></tbody>
+            </table>
+          </div>
+          <p class="empty-message" id="documents-empty" hidden>登録資料はありません。</p>
         </div>
       </section>
 
@@ -173,10 +195,35 @@
 
       <section class="admin-view" data-view-panel="search" hidden>
         <div class="section-head"><div><p class="eyebrow">RAG TEST</p><h2>RAG検索テスト</h2></div></div>
-        <div class="locked-panel">
-          <div class="locked-icon">🔎</div>
-          <h3>検索診断</h3>
-          <p>Vector順位、FTS順位、RRF順位、Evidence Gate判定、除外理由を管理者だけが確認できる画面です。</p>
+        <div class="auth-required-panel" id="search-auth-required">
+          <div class="locked-icon">🔒</div>
+          <h3>管理者ログインが必要です</h3>
+          <p>ログイン後、Vector順位・FTS順位・RRF順位・Evidence Gate判定を確認できます。</p>
+        </div>
+        <div class="search-test" id="search-content" hidden>
+          <label class="search-label" for="rag-test-query">質問</label>
+          <div class="search-row">
+            <input id="rag-test-query" type="text" placeholder="例）出張後の復命書はいつまでに提出しますか？">
+            <button id="run-rag-test" type="button">検索する</button>
+          </div>
+          <div class="search-result-grid" id="search-result-grid" hidden>
+            <article class="panel">
+              <h3>判定</h3>
+              <div class="status-list">
+                <div><span>根拠あり</span><strong id="test-has-evidence">—</strong></div>
+                <div><span>採用件数</span><strong id="test-accepted-count">—</strong></div>
+                <div><span>FTSエラー</span><strong id="test-fts-error">—</strong></div>
+              </div>
+            </article>
+            <article class="panel">
+              <h3>上位候補</h3>
+              <div id="test-candidates" class="candidate-list"></div>
+            </article>
+            <article class="panel wide">
+              <h3>採用された根拠</h3>
+              <div id="test-evidence" class="evidence-list"></div>
+            </article>
+          </div>
         </div>
       </section>
 
