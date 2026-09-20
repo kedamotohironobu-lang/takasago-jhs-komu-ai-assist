@@ -147,6 +147,9 @@
     if(nodes.addContent) nodes.addContent.hidden=!unlocked;
     if(nodes.driveAuthRequired) nodes.driveAuthRequired.hidden=unlocked;
     if(nodes.driveContent) nodes.driveContent.hidden=!unlocked;
+    if(nodes.refreshJobs) nodes.refreshJobs.disabled=!unlocked;
+    if(nodes.downloadBackup) nodes.downloadBackup.disabled=!unlocked;
+    if(nodes.runMaintenance) nodes.runMaintenance.disabled=!unlocked;
   }
 
   function renderAuthState(){
@@ -468,7 +471,10 @@
   }
 
   async function downloadBackupManifest(){
-    if(!state.authenticated) return;
+    if(!state.authenticated){
+      showToast('管理者ログインが必要です。');
+      return;
+    }
     try{
       if(nodes.downloadBackup){
         nodes.downloadBackup.disabled=true;
