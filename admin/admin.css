@@ -594,3 +594,127 @@ button{cursor:pointer}
   background:#fde4e2;
   color:#9b3d38
 }
+
+
+/* STEP6-4 / STEP6-5: FAQ improvement dashboard */
+.improvement-metrics{margin-bottom:16px}
+.improvement-list{
+  display:grid;
+  gap:10px;
+  margin-top:12px
+}
+.improvement-card{
+  padding:14px 15px;
+  border:1px solid #dfe8ee;
+  border-radius:14px;
+  background:#fafcfd
+}
+.improvement-card.level-action{
+  border-color:#efc9c5;
+  background:#fff7f6
+}
+.improvement-card.level-watch{
+  border-color:#ebd8a9;
+  background:#fffbf1
+}
+.improvement-card.level-info{
+  border-color:#dce7ed;
+  background:#f8fbfd
+}
+.improvement-card-head{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap
+}
+.improvement-level{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:4px 8px;
+  border-radius:999px;
+  font-size:10px;
+  font-weight:950
+}
+.level-action .improvement-level{
+  background:#fde4e2;
+  color:#9a3d38
+}
+.level-watch .improvement-level{
+  background:#fff0ca;
+  color:#896313
+}
+.level-info .improvement-level{
+  background:#eaf2f7;
+  color:#53758a
+}
+.improvement-type{
+  color:#7b8e9b;
+  font-size:10px;
+  font-weight:850
+}
+.improvement-card h3{
+  margin:8px 0 0;
+  color:#244f6d;
+  font-size:14px
+}
+.improvement-card p{
+  margin:5px 0 0;
+  color:#5f788a;
+  font-size:12px;
+  line-height:1.7
+}
+.improvement-card small{
+  display:block;
+  margin-top:6px;
+  color:#93a2ad;
+  font-size:10px;
+  word-break:break-all
+}
+.improvement-card-actions{
+  display:flex;
+  justify-content:flex-end;
+  margin-top:10px
+}
+.improvement-empty{
+  padding:20px;
+  border:1px solid #cfe5d9;
+  border-radius:14px;
+  background:#f3faf6
+}
+.improvement-empty strong{
+  display:block;
+  color:#246c50
+}
+.improvement-empty p{
+  margin:5px 0 0;
+  color:#6a8274;
+  font-size:12px;
+  line-height:1.65
+}
+.improvement-guide{margin-top:16px}
+.improvement-guide-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px
+}
+.improvement-guide-grid>div{
+  padding:12px 13px;
+  border:1px solid #e0e9ee;
+  border-radius:12px;
+  background:#fafcfd
+}
+.improvement-guide-grid strong{
+  display:block;
+  color:#315f7b;
+  font-size:12px
+}
+.improvement-guide-grid p{
+  margin:4px 0 0;
+  color:#6c8393;
+  font-size:11px;
+  line-height:1.65
+}
+@media(max-width:760px){
+  .improvement-guide-grid{grid-template-columns:1fr}
+}
