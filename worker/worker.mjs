@@ -529,6 +529,18 @@ export default {
     if (request.method === 'GET' && url.pathname === '/health/rag-vector') {
       return json({ok:true,ragVector:ragVectorStatus(env)},200,origin || '*');
     }
+    if (request.method === 'GET' && url.pathname === '/health/rag-gate') {
+      return json({
+        ok:true,
+        ragGate:{
+          configured:true,
+          mode:'precision-first-provisional',
+          thresholds:RAG_CONFIG.retrieval.gate,
+          noEvidenceAction:'skip-ai',
+          insufficientMessage:'登録資料では確認できません。'
+        }
+      },200,origin || '*');
+    }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/schema-ensure') {
       if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
