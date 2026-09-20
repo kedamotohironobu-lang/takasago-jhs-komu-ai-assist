@@ -230,11 +230,43 @@
       </section>
 
       <section class="admin-view" data-view-panel="drive" hidden>
-        <div class="section-head"><div><p class="eyebrow">SYNC</p><h2>Drive同期</h2></div></div>
-        <div class="locked-panel">
-          <div class="locked-icon">🔄</div>
-          <h3>Google Drive同期</h3>
-          <p>原本の更新日時・SHA-256を確認し、変更資料だけ再処理する同期画面です。</p>
+        <div class="section-head">
+          <div><p class="eyebrow">SYNC</p><h2>Drive同期</h2></div>
+          <button class="refresh-button" type="button" id="refresh-drive-status">↻ D1状態更新</button>
+        </div>
+
+        <div class="auth-required-panel" id="drive-auth-required">
+          <div class="locked-icon">🔒</div>
+          <h3>管理者ログインが必要です</h3>
+          <p>ログイン後、D1側のDrive同期状態を確認できます。</p>
+        </div>
+
+        <div id="drive-content" hidden>
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
+                <h3>Drive同期の運用</h3>
+                <p class="panel-description">原本の更新検出・本文抽出・新版登録はGAS管理ツールで行います。ここではD1側の現行版と最終同期状態を確認します。</p>
+              </div>
+              <span class="panel-badge">安全分離</span>
+            </div>
+            <div class="table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>資料名</th>
+                    <th>状態</th>
+                    <th>版</th>
+                    <th>Drive更新日時</th>
+                    <th>最終同期</th>
+                  </tr>
+                </thead>
+                <tbody id="drive-sync-body">
+                  <tr><td colspan="5">Drive由来の現行資料はありません。</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
         </div>
       </section>
 
