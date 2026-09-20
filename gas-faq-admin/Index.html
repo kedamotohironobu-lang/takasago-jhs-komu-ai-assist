@@ -83,17 +83,30 @@
     </section>
 
     <section class="card full">
-      <h2>③ Drive資料一覧</h2>
+      <h2>③ Drive資料・同期状況</h2>
       <div class="actions">
-        <button class="secondary" onclick="loadDriveFiles()">一覧を再読込</button>
+        <button class="secondary" onclick="loadDriveFiles()">↻ 同期状況を確認</button>
       </div>
+      <div id="syncSummary" class="status-row" style="margin-top:10px"></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>資料名</th><th>形式</th><th>更新</th><th>対応状況</th><th>操作</th></tr></thead>
+          <thead><tr><th>資料名</th><th>形式</th><th>Drive更新</th><th>同期状態</th><th>操作</th></tr></thead>
           <tbody id="driveRows"><tr><td colspan="5">読み込み待ちです。</td></tr></tbody>
         </table>
       </div>
-      <p class="help">直接登録対象：Googleドキュメント／スプレッドシート／スライド／TXT／CSV／JSON／HTML／Markdown／Word／Excel／PowerPoint／PDF。Officeファイルは一時Google形式へ変換して抽出します。PDFは管理者確認後にDrive変換/OCRを使用します。</p>
+
+      <div id="missingArea" style="display:none;margin-top:16px">
+        <h3>Driveフォルダで確認できない登録済み資料</h3>
+        <p class="small">自動削除はしません。原本を移動・削除したことを確認できた場合だけ「検索対象から外す」を押してください。</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>資料名</th><th>現在の版</th><th>状態</th><th>操作</th></tr></thead>
+            <tbody id="missingRows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="help">新規・変更ありの資料だけ再処理します。「最新」は再Embeddingしません。Officeファイルは一時Google形式へ変換、PDFは管理者確認後にDrive変換/OCRを使用します。</p>
     </section>
 
     <section class="card" id="registerCard">
@@ -179,7 +192,8 @@
     selectedFile:null,
     preview:null,
     currentDocumentId:'',
-    appState:null
+    appState:null,
+    syncScan:null
   };
 
   function gs(name,...args){
@@ -277,27 +291,122 @@
   async function loadDriveFiles(showBusy=true){
     if(showBusy)busy(true);
     try{
-      const files=await gs('getDriveFiles');
+      const scan=await gs('scanDriveSyncStep5');
+      state.syncScan=scan;
+
+      const counts=scan.counts||{};
+      document.getElementById('syncSummary').innerHTML=
+        '<span class="badge warn">変更あり '+Number(counts.changed||0)+'</span>'+
+        '<span class="badge">新規 '+Number(counts.new||0)+'</span>'+
+        '<span class="badge ok">最新 '+Number(counts.unchanged||0)+'</span>'+
+        '<span class="badge '+(Number(counts.missing||0)?'bad':'ok')+'">原本未確認 '+Number(counts.missing||0)+'</span>';
+
+      const files=Array.isArray(scan.items)?scan.items:[];
       const tbody=document.getElementById('driveRows');
       if(!files.length){
         tbody.innerHTML='<tr><td colspan="5">フォルダ内に資料がありません。</td></tr>';
-        return;
+      }else{
+        tbody.innerHTML=files.map(f=>{
+          let syncBadge='';
+          if(f.syncStatus==='changed') syncBadge='<span class="badge warn">変更あり</span>';
+          else if(f.syncStatus==='new') syncBadge='<span class="badge">新規</span>';
+          else syncBadge='<span class="badge ok">最新</span>';
+
+          const support=f.supported
+            ? ''
+            : '<div class="small">'+escapeHtml(f.note||'未対応形式')+'</div>';
+
+          let action='';
+          if(!f.supported){
+            action='<button class="secondary" disabled>未対応</button>';
+          }else if(f.syncStatus==='unchanged'){
+            action='<button class="secondary" disabled>最新</button>';
+          }else{
+            action='<button class="secondary" onclick=\'prepareSyncFile('+JSON.stringify(JSON.stringify(f))+')\'>確認して登録</button>';
+          }
+
+          return '<tr>'+
+            '<td><strong>'+escapeHtml(f.name)+'</strong><div class="small">'+escapeHtml(f.sourceId||'')+'</div></td>'+
+            '<td>'+escapeHtml(f.kind||f.mimeType||'-')+support+'</td>'+
+            '<td>'+escapeHtml(f.updatedAt||'-')+'</td>'+
+            '<td>'+syncBadge+'<div class="small">'+escapeHtml(f.reason||'')+'</div></td>'+
+            '<td>'+action+'</td>'+
+          '</tr>';
+        }).join('');
       }
-      tbody.innerHTML=files.map(f=>{
-        const status=f.supported
-          ? '<span class="badge ok">対応</span>'+(f.note?'<div class="small">'+escapeHtml(f.note)+'</div>':'')
-          : '<span class="badge warn">未対応</span><div class="small">'+escapeHtml(f.note)+'</div>';
-        return '<tr>'+
-          '<td><strong>'+escapeHtml(f.name)+'</strong><div class="small">'+escapeHtml(f.mimeType)+'</div></td>'+
-          '<td>'+escapeHtml(f.kind)+'</td>'+
-          '<td>'+escapeHtml(f.updatedAt)+'</td>'+
-          '<td>'+status+'</td>'+
-          '<td><button class="secondary" '+(f.supported?'':'disabled')+' onclick=\'selectFile('+JSON.stringify(JSON.stringify(f))+')\'>選択</button></td>'+
-        '</tr>';
-      }).join('');
+
+      const missing=Array.isArray(scan.missing)?scan.missing:[];
+      const missingArea=document.getElementById('missingArea');
+      const missingRows=document.getElementById('missingRows');
+      missingArea.style.display=missing.length?'block':'none';
+      missingRows.innerHTML=missing.map(m=>
+        '<tr>'+
+          '<td><strong>'+escapeHtml(m.title||m.sourceId)+'</strong><div class="small">'+escapeHtml(m.sourceId)+'</div></td>'+
+          '<td>rev '+Number(m.revisionNo||0)+'</td>'+
+          '<td><span class="badge warn">'+escapeHtml(m.status||'-')+'</span></td>'+
+          '<td><button class="secondary" onclick="markMissingSource(\''+escapeHtml(m.sourceId)+'\')">検索対象から外す</button></td>'+
+        '</tr>'
+      ).join('');
     }catch(e){
       document.getElementById('driveRows').innerHTML='<tr><td colspan="5">'+escapeHtml(e.message)+'</td></tr>';
     }finally{if(showBusy)busy(false)}
+  }
+
+  async function prepareSyncFile(json){
+    const f=JSON.parse(json);
+    busy(true);
+    try{
+      const defaults=await gs('getDriveSyncDefaultsStep5',f.fileId);
+      const item=defaults.item||f;
+      const suggested=defaults.suggested||{};
+
+      state.selectedFile={
+        id:item.fileId,
+        name:item.name,
+        mimeType:item.mimeType,
+        kind:item.kind,
+        supported:item.supported,
+        note:item.note||''
+      };
+      state.preview=null;
+      state.currentDocumentId='';
+
+      document.getElementById('selectedName').textContent=
+        (item.syncStatus==='changed'?'新版確認：':'新規登録：')+item.name;
+      document.getElementById('categoryId').value=suggested.categoryId||'cat-other';
+      document.getElementById('ownerDepartment').value=suggested.ownerDepartment||'';
+      document.getElementById('versionLabel').value=suggested.versionLabel||'';
+      document.getElementById('validFrom').value=suggested.validFrom||'';
+      document.getElementById('validUntil').value=suggested.validUntil||'';
+      document.getElementById('approved').checked=false;
+      document.getElementById('previewBtn').disabled=false;
+      document.getElementById('registerBtn').disabled=false;
+      document.getElementById('previewBox').style.display='none';
+      document.getElementById('allowPdfOcr').checked=false;
+      document.getElementById('pdfOcrArea').style.display=
+        item.mimeType==='application/pdf'?'block':'none';
+      document.getElementById('unitArea').style.display='none';
+      document.getElementById('progressBox').style.display='none';
+
+      document.getElementById('registerCard').scrollIntoView({behavior:'smooth',block:'start'});
+      toast(item.syncStatus==='changed'
+        ? 'Driveの変更を検出しました。プレビュー確認後に新版登録してください。'
+        : '新規資料です。プレビュー確認後に登録してください。');
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
+  }
+
+  async function markMissingSource(sourceId){
+    if(!confirm('Driveフォルダで原本を確認できません。FAQ検索対象から外しますか？\n\n'+sourceId)){
+      return;
+    }
+    busy(true);
+    try{
+      await gs('markDriveSourceMissingStep5',sourceId);
+      toast('検索対象から外しました。D1の履歴は保持されています。');
+      await Promise.allSettled([loadDriveFiles(false),loadRegistered(false),reloadStatusOnly()]);
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
   }
 
   function selectFile(json){
@@ -383,11 +492,16 @@
 
     try{
       const r=await gs('registerDriveFileStep5',options);
-      const p=r.progress||{};
-      state.currentDocumentId=p.documentId||r.stage?.result?.documentId||'';
-      renderProgress(p);
+      if(r&&r.skipped){
+        showProgress('更新なし',r.message||'Drive原本に更新がないため再処理しませんでした。',false);
+        toast('更新なし：再Embeddingは行っていません。');
+      }else{
+        const p=r.progress||{};
+        state.currentDocumentId=p.documentId||r.stage?.result?.documentId||'';
+        renderProgress(p);
+      }
       document.getElementById('approved').checked=false;
-      await Promise.allSettled([loadRegistered(false),reloadStatusOnly()]);
+      await Promise.allSettled([loadRegistered(false),loadDriveFiles(false),reloadStatusOnly()]);
     }catch(e){
       showProgress('登録エラー',e.message,false);
       toast(e.message);
