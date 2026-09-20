@@ -1,0 +1,511 @@
+# 高砂市立高砂中学校 校務AIアシスト
+## 管理者向け運用マニュアル
+
+更新基準: STEP5-14  
+対象: 校務AIアシスト / 校内FAQ RAG 管理者  
+目的: 担当者が変わっても、安全に資料登録・更新・削除・復旧・障害対応を行えること
+
+---
+
+## 1. システム全体像
+
+校内FAQは次の構成です。
+
+```text
+Google Drive
+  ↓ 原本
+Google Apps Script 管理ツール
+  ↓ 本文抽出・確認・承認
+Cloudflare Worker
+  ↓
+D1
+  - 資料メタデータ
+  - 本文チャンク
+  - 版管理
+  - 監査ログ
+  - 同期ジョブ
+  ↓
+Gemini Embedding
+  ↓
+Vectorize
+  ↓
+FTS5
+  ↓
+Hybrid Retrieval + Evidence Gate
+  ↓
+AI回答
+```
+
+重要:
+- Google Driveを資料原本の正本とする。
+- D1をRAG本文・状態管理の正本とする。
+- Vectorizeは検索用ベクトルであり正本ではない。
+- 旧KV FAQは退役済み。
+- 根拠が弱い場合、AIは回答せず「登録資料では確認できません。」とする。
+
+---
+
+## 2. 管理者が使う画面
+
+### GitHub Pages 管理者ダッシュボード
+
+```text
+https://kedamotohironobu-lang.github.io/takasago-jhs-komu-ai-assist/admin/
+```
+
+主な機能:
+- ダッシュボード
+- 資料管理
+- 資料追加
+- Drive同期状態
+- RAG検索テスト
+- 利用状況
+- システム状態
+- 監査ログ
+- 同期ジョブ再試行
+- バックアップマニフェスト
+
+### GAS FAQ資料登録ツール
+
+Google Drive原本の
+- 新規検出
+- 更新検出
+- プレビュー
+- シート / スライド選択
+- PDF OCR確認
+- 新版登録
+- 日次監視
+
+に使用する。
+
+---
+
+## 3. Cloudflareで必要な設定名
+
+値そのものはこの文書へ記録しない。
+
+### Secrets / Variables
+
+```text
+CEREBRAS_API_KEY
+GROQ_API_KEY
+GEMINI_API_KEY
+FAQ_ADMIN_TOKEN
+GOOGLE_OAUTH_CLIENT_ID
+ADMIN_EMAILS
+STAFF_EMAILS
+STAFF_DOMAINS
+```
+
+用途:
+- ADMIN_EMAILS: 管理者ダッシュボード利用者
+- STAFF_EMAILS: FAQを利用できる個別職員
+- STAFF_DOMAINS: 管理されたGoogle Workspace単位の職員許可
+
+ADMIN_EMAILSの管理者は職員FAQも利用できる。
+
+---
+
+## 4. GAS Script Properties
+
+値そのものはこの文書へ記録しない。
+
+```text
+FAQ_ADMIN_TOKEN
+FAQ_FOLDER_ID
+WORKER_BASE_URL（任意）
+```
+
+過去にVectorize Index作成用として使用した
+`CLOUDFLARE_VECTORIZE_TOKEN`
+は、Index作成後に不要であればScript Propertiesから削除し、
+Cloudflare側でもトークンを失効させる。
+
+---
+
+## 5. 通常の資料登録
+
+1. FAQ用Google Driveフォルダへ原本を置く。
+2. GAS管理画面を開く。
+3. 「Drive資料・同期状況」を更新する。
+4. 「新規」の資料で「確認して登録」を押す。
+5. 本文・構造をプレビューする。
+6. カテゴリ、管理担当、版、有効期間を確認する。
+7. Excel / Sheetsは必要なシートを選ぶ。
+8. PowerPoint / Slidesは必要なスライドを選ぶ。
+9. PDFは管理者がOCR利用を確認した場合だけ許可する。
+10. 「承認済み資料であること」を確認する。
+11. 「新RAGへ登録する」を押す。
+12. 登録完了を確認する。
+13. 管理者画面「RAG検索テスト」で実際に検索する。
+14. 根拠資料が正しいことを確認する。
+
+登録してはいけない例:
+- 生徒名簿
+- 成績
+- 健康情報
+- 家庭情報
+- 個別支援情報
+- 人事上の機微情報
+
+---
+
+## 6. 資料更新・新版差し替え
+
+Drive原本を更新後、GASで同期状況を確認する。
+
+### 状態
+
+- 新規: D1に現行版なし
+- 変更あり: Drive原本がD1より新しい
+- 最新: 再処理不要
+- 原本未確認: D1にはあるが指定Driveフォルダで原本を確認できない
+
+### 変更ありの場合
+
+1. 「確認して登録」を押す。
+2. 新版本文をプレビューする。
+3. カテゴリ・担当・有効期間を確認する。
+4. 承認する。
+5. 新RAGへ登録する。
+
+切替順:
+```text
+新版 staging
+→ Embedding
+→ Vectorize
+→ FTS5
+→ 検索可能確認
+→ 新版 active/current
+→ 旧版 inactive
+```
+
+新版完成前に旧版を止めない。
+
+本文SHA-256と主要メタデータが同じ場合、
+新版revisionは作らず再Embeddingを省略する。
+
+---
+
+## 7. 資料削除
+
+「資料管理」から active の現行資料だけ削除可能。
+
+操作:
+1. 「検索から外す」を押す。
+2. 確認画面で `削除` と入力する。
+3. 完了を確認する。
+
+この削除は論理削除。
+
+削除されないもの:
+- Google Drive原本
+- D1のdocuments行
+- D1のchunks本文
+- 監査ログ
+- 版履歴
+
+検索から外れるもの:
+- FTS5
+- active chunk
+- Vectorize検索対象
+
+削除操作は監査ログに
+`document_soft_deleted`
+として残る。
+
+---
+
+## 8. 資料復旧
+
+論理削除済み現行資料は「復旧」ボタンから戻せる。
+
+復旧処理:
+```text
+deleted_at解除
+→ chunksをpending
+→ 再Embedding
+→ Vectorize
+→ FTS5
+→ active
+```
+
+有効期限切れ資料はそのまま復旧しない。
+Drive原本を確認し、有効期間を更新した新版として登録する。
+
+復旧操作は監査ログに
+`document_restore_started`
+として残る。
+
+---
+
+## 9. Drive原本未確認
+
+Driveフォルダから資料が見つからなくても自動削除しない。
+
+管理者が移動・削除を確認した場合だけ
+「検索対象から外す」を実行する。
+
+処理後:
+- status = source_missing
+- chunks inactive
+- FTS削除
+- Vectorize削除を試行
+- D1履歴は保持
+
+原本が戻った場合はDriveから新版登録する。
+
+---
+
+## 10. 有効期限
+
+日付は日本時間で判定する。
+
+例:
+```text
+valid_until = 2026-09-30
+```
+
+9月30日中は有効。  
+10月1日から期限切れ。
+
+日次メンテナンスにより:
+- documents.status = expired
+- chunks inactive
+- FTS削除
+- Vectorize削除を試行
+
+監査ログ:
+`document_expired`
+
+---
+
+## 11. 自動メンテナンス
+
+GAS管理画面「自動メンテナンス」から有効化する。
+
+実行:
+- 毎日6時台 JST
+
+自動で行う:
+- 期限切れ資料除外
+- Drive変更件数検出
+- 新規資料件数検出
+- 原本未確認件数検出
+- 24時間以上の停滞ジョブ件数確認
+
+自動で行わない:
+- Drive新版登録
+- PDF OCR承認
+- 原本未確認資料の削除
+- source_missing化
+
+---
+
+## 12. 同期ジョブ障害
+
+管理者画面「システム状態」→「同期ジョブ・再試行」を確認する。
+
+再試行可能:
+- status = failed
+- queued / running / waiting_review が24時間以上停滞
+
+「再試行」を押すと:
+1. error / indexing chunkをpendingへ戻す。
+2. retry_countを+1。
+3. Embedding / Vectorizeを再実行。
+4. finalizeまで実行。
+5. 監査ログへ記録。
+
+監査ログ:
+`sync_job_retried`
+
+completedジョブは再試行しない。
+
+---
+
+## 13. よくある異常
+
+### Embedding / Vectorizeエラー
+
+表示例:
+```text
+EMBEDDING_OR_VECTORIZE_FAILED
+```
+
+対応:
+1. Cloudflare Workerのシステム状態を確認。
+2. Gemini API設定を確認。
+3. Vectorize接続を確認。
+4. 「同期ジョブ・再試行」から再試行。
+
+### Vectorize反映待ち
+
+数秒後に再試行する。
+保存済みでも近傍検索Indexへの反映に時間差がある場合がある。
+
+### RAGで回答できない
+
+確認:
+1. 資料が active / approved / current か。
+2. 有効期間内か。
+3. RAG検索テストで候補が出るか。
+4. Evidence Gateで除外されていないか。
+5. 根拠資料に質問内容が実際に書かれているか。
+
+Evidence Gateを安易に緩めない。
+
+---
+
+## 14. バックアップ
+
+管理者画面
+「システム状態」→「バックアップマニフェスト」
+からJSONを保存する。
+
+ファイルには含める:
+- categories
+- documentsメタデータ
+- sourceId / revision
+- Drive file ID
+- content hash
+- chunkメタデータ / chunk hash
+- audit logs
+- sync jobs
+
+含めない:
+- chunk本文
+- APIキー
+- FAQ_ADMIN_TOKEN
+- Google ID token
+- AI会話履歴
+
+推奨:
+- 本番公開前
+- 大規模資料追加前
+- 年度更新前
+- システム構成変更前
+
+に保存する。
+
+---
+
+## 15. 障害時の復旧
+
+### A. Vectorizeだけ壊れた場合
+
+D1本文が残っていれば再Embeddingで復旧可能。
+
+1. 対象資料を確認。
+2. 必要に応じて論理削除→復旧、または再登録。
+3. Vectorizeを再生成。
+4. RAG検索テスト。
+5. 根拠カード確認。
+
+### B. D1状態がおかしい場合
+
+1. Google Drive原本を変更しない。
+2. バックアップマニフェストを確保。
+3. D1スキーマを再作成。
+4. カテゴリを復元。
+5. Drive原本から順番に再登録。
+6. マニフェストとsourceId / version / hashを照合。
+7. RAG検索テスト。
+8. 一般職員公開を再開。
+
+### C. Drive原本を失った場合
+
+D1本文を通常バックアップマニフェストへ含めていないため、
+Driveのごみ箱・組織側バックアップ・原本保管から先に復元する。
+
+Driveを資料本文の正本として扱うため、
+D1を唯一の原本にしない。
+
+---
+
+## 16. 本番公開前チェック
+
+管理者画面
+「システム状態」→「本番運用準備チェック」
+
+確認:
+- D1 OK
+- Vectorize OK
+- Evidence Gate OK
+- AI Provider OK
+- 管理者認証 OK
+- 一般職員認証設定 OK
+- 承認済み実資料あり
+- active chunkあり
+- 旧KV公開経路 retired
+
+`schoolwideReady=true`
+を一般公開の目安とする。
+
+---
+
+## 17. 月1回の確認
+
+- 管理者アカウントを確認
+- STAFF_EMAILS / STAFF_DOMAINSを確認
+- 期限切れ資料を確認
+- source_missing資料を確認
+- failed / stalled jobを確認
+- Vectorize容量を確認
+- D1容量を確認
+- 監査ログを確認
+- バックアップマニフェストを保存
+- FAQで代表質問を3～5問確認
+
+---
+
+## 18. 年度更新
+
+1. 旧年度資料を即削除しない。
+2. 新年度資料をDriveへ配置。
+3. 新版を登録。
+4. RAG検索テスト。
+5. 新版回答を確認。
+6. 必要に応じて旧資料のvalid_untilを管理。
+7. 期限切れ後に自動除外を確認。
+8. バックアップマニフェストを保存。
+
+---
+
+## 19. 引継ぎ時に渡すもの
+
+- この運用マニュアル
+- GitHub repository URL
+- GitHub Pages URL
+- Worker URL
+- GASプロジェクト名
+- FAQ用Driveフォルダの場所
+- Cloudflareの管理権限
+- Google OAuth設定の管理権限
+- ADMIN_EMAILS / STAFF設定の運用ルール
+- 最新バックアップマニフェスト
+
+渡してはいけない方法:
+- APIキーを文書へ直書き
+- FAQ_ADMIN_TOKENをメール本文へ記載
+- OAuth Client Secretをスクリーンショットで共有
+
+---
+
+## 20. 基本方針
+
+迷った場合は、
+**自動化より確認を優先する。**
+
+特に:
+- 資料削除
+- 原本未確認
+- PDF OCR
+- 新版切替
+- 職員公開範囲
+
+は管理者が内容を確認してから実行する。
+
+校内FAQは「もっともらしい回答」ではなく、
+**承認済み資料に根拠がある回答だけを返すこと**
+を最優先とする。
