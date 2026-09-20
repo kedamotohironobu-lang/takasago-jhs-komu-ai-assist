@@ -30,7 +30,9 @@
       sessionStorage.getItem('takasagoAdminIdToken') ||
       '',
     staffAuthenticated:false,
-    staffUser:null
+    staffUser:null,
+    faqPreviousUserQuestion:'',
+    faqChatBusy:false
   };
 
   const $ = (s) => document.querySelector(s);
@@ -53,7 +55,13 @@
     faqUserName:$('#faq-user-name'),
     faqSignoutButton:$('#faq-signout-button'),
     faqResultSources:$('#faq-result-sources'),
-    faqResultSourceList:$('#faq-result-source-list')
+    faqResultSourceList:$('#faq-result-source-list'),
+    faqChatPanel:$('#faq-chat-panel'),
+    faqChatLog:$('#faq-chat-log'),
+    faqChatForm:$('#faq-chat-form'),
+    faqChatInput:$('#faq-chat-input'),
+    faqChatSend:$('#faq-chat-send'),
+    faqChatClear:$('#faq-chat-clear')
   };
 
   if (nodes.year) nodes.year.textContent = new Date().getFullYear();
@@ -104,6 +112,11 @@
     nodes.inputLabel.textContent = item.label; nodes.mainInput.placeholder = item.placeholder;
     nodes.mainInput.value = draft.input || ''; nodes.optionArea.hidden = !item.usesOptions;
     nodes.length.value = draft.length || '標準'; nodes.tone.value = draft.tone || '丁寧';
+
+    const isFaq = id === 'faq';
+    if (nodes.form) nodes.form.hidden = isFaq;
+    if (nodes.faqChatPanel) nodes.faqChatPanel.hidden = !isFaq;
+
     renderMiniTools();
     updateFaqAuthUi();
     showScreen('editor');
@@ -171,6 +184,14 @@
       if (!authenticated) nodes.submitButton.textContent = '🔒 職員ログイン後に利用できます';
       else nodes.submitButton.textContent = '✨ AIで作成する';
     }
+
+    if (nodes.faqChatSend) {
+      nodes.faqChatSend.disabled = !authenticated || state.faqChatBusy;
+      nodes.faqChatSend.textContent = state.faqChatBusy
+        ? '検索・回答中…'
+        : (authenticated ? '送信する' : '🔒 ログイン後に利用');
+    }
+    if (nodes.faqChatInput) nodes.faqChatInput.disabled = !authenticated || state.faqChatBusy;
   }
 
   async function verifyStaffToken(token) {
@@ -259,6 +280,164 @@
       console.error('staff auth initialization failed', err);
       state.staffAuthInitialized = false;
       updateFaqAuthUi();
+    }
+  }
+
+  function createFaqSourceCards(sources) {
+    const wrap = document.createElement('div');
+    wrap.className = 'faq-chat-sources';
+
+    const list = Array.isArray(sources) ? sources : [];
+    if (!list.length) return wrap;
+
+    const heading = document.createElement('div');
+    heading.className = 'faq-chat-sources-title';
+    heading.textContent = '根拠資料';
+    wrap.appendChild(heading);
+
+    for (const source of list) {
+      const card = document.createElement('div');
+      card.className = 'faq-chat-source-card';
+
+      const title = document.createElement('strong');
+      title.textContent = source.title || source.fileName || '根拠資料';
+      card.appendChild(title);
+
+      const parts = [];
+      if (source.versionLabel) parts.push('版: ' + source.versionLabel);
+      if (source.categoryName) parts.push('分類: ' + source.categoryName);
+      if (source.headingPath) parts.push('見出し: ' + source.headingPath);
+      if (source.pageFrom) {
+        parts.push(
+          'ページ: ' + source.pageFrom +
+          (source.pageTo && source.pageTo !== source.pageFrom ? '–' + source.pageTo : '')
+        );
+      }
+      if (source.sheetName) parts.push('シート: ' + source.sheetName);
+      if (source.slideNo) parts.push('スライド: ' + source.slideNo);
+
+      const meta = document.createElement('span');
+      meta.textContent = parts.join(' ／ ') || 'D1登録資料';
+      card.appendChild(meta);
+      wrap.appendChild(card);
+    }
+
+    return wrap;
+  }
+
+  function appendFaqChatMessage(role, text, sources=[], contextUsed=false) {
+    if (!nodes.faqChatLog) return;
+
+    const article = document.createElement('article');
+    article.className = 'faq-message ' +
+      (role === 'user' ? 'faq-message-user' : 'faq-message-assistant');
+
+    const label = document.createElement('div');
+    label.className = 'faq-message-label';
+    label.textContent = role === 'user' ? '先生' : '校内FAQ';
+    article.appendChild(label);
+
+    const body = document.createElement('div');
+    body.className = 'faq-message-body';
+    body.textContent = String(text || '');
+    article.appendChild(body);
+
+    if (role !== 'user' && contextUsed) {
+      const context = document.createElement('div');
+      context.className = 'faq-context-note';
+      context.textContent = '直前の先生の質問を補助文脈として検索しました。';
+      article.appendChild(context);
+    }
+
+    if (role !== 'user' && Array.isArray(sources) && sources.length) {
+      article.appendChild(createFaqSourceCards(sources));
+    }
+
+    nodes.faqChatLog.appendChild(article);
+    article.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  }
+
+  function resetFaqChat() {
+    state.faqPreviousUserQuestion = '';
+    if (!nodes.faqChatLog) return;
+    nodes.faqChatLog.replaceChildren();
+
+    const article = document.createElement('article');
+    article.className = 'faq-message faq-message-assistant';
+
+    const label = document.createElement('div');
+    label.className = 'faq-message-label';
+    label.textContent = '校内FAQ';
+
+    const body = document.createElement('div');
+    body.className = 'faq-message-body';
+    body.textContent =
+      '校内資料について質問してください。登録済みの承認資料で確認できる範囲だけ回答します。';
+
+    article.append(label, body);
+    nodes.faqChatLog.appendChild(article);
+    if (nodes.faqChatInput) nodes.faqChatInput.value = '';
+  }
+
+  async function sendFaqChatQuestion() {
+    if (state.faqChatBusy) return;
+    if (!state.staffAuthenticated) {
+      showToast('校内FAQは職員ログイン後に利用できます。', 3600);
+      await initializeStaffAuth();
+      return;
+    }
+
+    const question = String(nodes.faqChatInput?.value || '').trim();
+    if (!question) {
+      showToast('質問を入力してください。');
+      nodes.faqChatInput?.focus();
+      return;
+    }
+    if (question.length > 12000) {
+      showToast('質問は12,000文字以内にしてください。', 3800);
+      return;
+    }
+
+    const previousUserQuestion = state.faqPreviousUserQuestion;
+    appendFaqChatMessage('user', question);
+    if (nodes.faqChatInput) nodes.faqChatInput.value = '';
+
+    state.faqChatBusy = true;
+    updateFaqAuthUi();
+
+    try {
+      const data = await callWorker({
+        toolId:'faq',
+        input:question,
+        options:{},
+        quickEdit:null,
+        previousOutput:null,
+        previousUserQuestion:previousUserQuestion || ''
+      });
+
+      appendFaqChatMessage(
+        'assistant',
+        String(data.text || '登録資料では確認できません。'),
+        data.sources || [],
+        Boolean(data.contextUsed)
+      );
+
+      // 次の検索に残すのは「先生が今入力した質問」だけ。
+      // AI回答は検索文脈として保存・送信しない。
+      state.faqPreviousUserQuestion = question;
+    } catch (err) {
+      console.error('FAQ chat error', err);
+      appendFaqChatMessage('assistant', errorMessage(err), []);
+      if (err?.code === 'GOOGLE_ID_TOKEN_EXPIRED' || err?.status === 401) {
+        state.staffAuthenticated = false;
+        state.staffUser = null;
+        state.staffIdToken = '';
+        sessionStorage.removeItem('takasagoStaffIdToken');
+      }
+    } finally {
+      state.faqChatBusy = false;
+      updateFaqAuthUi();
+      nodes.faqChatInput?.focus();
     }
   }
 
@@ -432,11 +611,27 @@
   nodes.copyButton?.addEventListener('click', copyResult);
   nodes.quickButtons.forEach((button) => button.addEventListener('click', () => generateResult(button.dataset.quickEdit || '')));
   nodes.helpButton?.addEventListener('click', () => showToast('機能を選ぶ → 内容を入力 →「AIで作成する」の順です。'));
+  nodes.faqChatForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    sendFaqChatQuestion();
+  });
+  nodes.faqChatInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendFaqChatQuestion();
+    }
+  });
+  nodes.faqChatClear?.addEventListener('click', () => {
+    resetFaqChat();
+    showToast('FAQの会話をクリアしました。');
+  });
+
   nodes.faqSignoutButton?.addEventListener('click', () => {
     sessionStorage.removeItem('takasagoStaffIdToken');
     state.staffIdToken = '';
     state.staffAuthenticated = false;
     state.staffUser = null;
+    state.faqPreviousUserQuestion = '';
     try { window.google?.accounts?.id?.disableAutoSelect(); } catch {}
     updateFaqAuthUi();
     renderStaffGoogleButton();
