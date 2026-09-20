@@ -1037,7 +1037,33 @@ function checkAndNotifyStep6_() {
     state.actionCount > 0 ||
     state.watchCount > 0;
 
-  const fingerprint = alertFingerprintStep6_(state);
+  // 件数が同じでも「別の改善候補へ入れ替わった」場合は状態変化として通知する。
+  // 質問本文・AI回答本文は使わず、候補IDと重要度だけで差分を判定する。
+  const improvementSignature = (Array.isArray(improvement.recommendations)
+    ? improvement.recommendations
+    : [])
+    .filter(function (item) {
+      return item && (item.level === 'action' || item.level === 'watch');
+    })
+    .map(function (item) {
+      return String(item.id || '') + '|' + String(item.level || '');
+    })
+    .filter(Boolean)
+    .sort();
+
+  // 同じ警告コードが続く間は通知を連発しない。
+  // ただし failed / stalled の件数が変わった場合は運用状態の変化として扱う。
+  const fingerprintPayload = {
+    operations: {
+      health: state.operationsHealth,
+      alertCodes: alertCodes,
+      failedJobs: Number(operations.failedJobs || 0),
+      stalledJobs: Number(operations.stalledJobs || 0)
+    },
+    improvement: improvementSignature
+  };
+
+  const fingerprint = alertFingerprintStep6_(fingerprintPayload);
   const previousFingerprint = String(
     props.getProperty(STEP6_LAST_ALERT_FINGERPRINT_PROPERTY) || ''
   );
