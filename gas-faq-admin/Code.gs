@@ -2078,6 +2078,30 @@ function extractConvertedBinaryStep5_(file, selected, options) {
   }
 }
 
+/**
+ * STEP7: Googleドキュメント本文プレビュー権限の再認証確認用。
+ * FAQフォルダ内の最初のGoogleドキュメントを読み取り、DocumentApp権限が有効か確認します。
+ * 文書内容は変更しません。
+ */
+function authorizeDocumentPreviewStep7() {
+  const folder = getFaqFolder_();
+  const files = folder.getFilesByType(MIME.GOOGLE_DOC);
+
+  if (!files.hasNext()) {
+    throw new Error('FAQ資料フォルダ内にGoogleドキュメントがありません。STEP7動作確認用資料を置いてから実行してください。');
+  }
+
+  const file = files.next();
+  const doc = DocumentApp.openById(file.getId());
+
+  return {
+    ok: true,
+    fileId: file.getId(),
+    fileName: file.getName(),
+    documentName: doc.getName()
+  };
+}
+
 function extractGoogleDocSectionsStep5_(fileId) {
   const doc = DocumentApp.openById(fileId);
   const body = doc.getBody();
