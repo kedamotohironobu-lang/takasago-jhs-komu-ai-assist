@@ -108,6 +108,7 @@
     monthlyContent:$('#monthly-content'),
     monthlyReportMonth:$('#monthly-report-month'),
     generateMonthlyReport:$('#generate-monthly-report'),
+    printMonthlyReport:$('#print-monthly-report'),
     downloadMonthlyReport:$('#download-monthly-report')
   };
 
@@ -222,6 +223,7 @@
     if(nodes.monthlyAuthRequired) nodes.monthlyAuthRequired.hidden=unlocked;
     if(nodes.monthlyContent) nodes.monthlyContent.hidden=!unlocked;
     if(nodes.generateMonthlyReport) nodes.generateMonthlyReport.disabled=!unlocked;
+    if(nodes.printMonthlyReport) nodes.printMonthlyReport.disabled=!unlocked || !state.monthlyReport;
     if(nodes.downloadMonthlyReport) nodes.downloadMonthlyReport.disabled=!unlocked || !state.monthlyReport;
     if(nodes.runAcceptanceSuite) nodes.runAcceptanceSuite.disabled=!unlocked || state.acceptance.running;
     if(nodes.refreshJobs) nodes.refreshJobs.disabled=!unlocked;
@@ -1037,6 +1039,7 @@
       `).join('') || '<p class="empty-message">対象月の利用はありません。</p>';
     }
 
+    if(nodes.printMonthlyReport) nodes.printMonthlyReport.disabled=false;
     if(nodes.downloadMonthlyReport) nodes.downloadMonthlyReport.disabled=false;
   }
 
@@ -2223,6 +2226,7 @@
   nodes.downloadImprovementReport?.addEventListener('click',downloadImprovementReport);
   nodes.refreshImprovementActions?.addEventListener('click',loadImprovementActions);
   nodes.generateMonthlyReport?.addEventListener('click',loadMonthlyReport);
+  nodes.printMonthlyReport?.addEventListener('click',()=>window.print());
   nodes.downloadMonthlyReport?.addEventListener('click',downloadMonthlyReport);
   nodes.improvementList?.addEventListener('click',(event)=>{
     const startButton=event.target.closest('.start-improvement');
