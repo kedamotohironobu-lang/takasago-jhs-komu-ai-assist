@@ -237,13 +237,16 @@
     badges.push('<span class="badge '+(vector?'ok':'bad')+'">Vectorize '+(vector?'正常':'要確認')+'</span>');
     badges.push('<span class="badge '+(gate?'ok':'bad')+'">Evidence Gate '+(gate?'正常':'要確認')+'</span>');
     badges.push('<span class="badge '+(s.folderName?'ok':'warn')+'">Drive '+(s.folderName?'接続済み':'未設定')+'</span>');
+    const conv=s.driveConversion||{};
+    badges.push('<span class="badge '+(conv.configured?'ok':'bad')+'">Office/PDF変換 '+(conv.configured?'利用可':'要設定')+'</span>');
     document.getElementById('statusBadges').innerHTML=badges.join('');
 
     const dash=h.ragDashboard&&h.ragDashboard.ragDashboard?h.ragDashboard.ragDashboard:{};
     document.getElementById('statusDetail').textContent=
       'Drive: '+(s.folderName||s.folderError||'未設定')+
       ' ／ 有効資料: '+(dash.activeDocuments??'-')+
-      '件 ／ 有効チャンク: '+(dash.activeChunks??'-')+'件';
+      '件 ／ 有効チャンク: '+(dash.activeChunks??'-')+'件'+
+      (s.driveConversion&&s.driveConversion.error?' ／ Drive変換: '+s.driveConversion.error:'');
   }
 
   async function saveFolder(){
