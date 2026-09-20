@@ -694,3 +694,90 @@ schoolwideReady:
 管理者ダッシュボード「システム状態」に本番運用準備チェックを表示する。
 
 Worker version: 5.10.0
+
+
+## STEP5-12 Drive同期・版管理
+
+目的:
+- Drive原本の更新を検出
+- 変更のない資料を再Embeddingしない
+- 新版の準備が完了してから旧版をinactiveへ切替
+- Drive原本が見つからない場合は即削除せずsource_missingへ
+- 管理操作をaudit_logsで追跡
+
+### Drive sync scan
+
+GAS:
+- scanDriveSyncStep5()
+- getDriveSyncDefaultsStep5(fileId)
+- markDriveSourceMissingStep5(sourceId)
+- listRagAuditStep5(limit)
+
+状態:
+- new: D1に現行版なし
+- changed: Drive更新日時がD1 source_modified_atより新しい
+- unchanged: Drive更新なし
+- missing: D1現行版はあるが指定Driveフォルダ直下で原本を確認できない
+
+変更ありの場合:
+1. 管理者が同期候補を選択
+2. 本文・構造を再プレビュー
+3. カテゴリ・管理担当・有効期間を確認
+4. 承認チェック
+5. D1 staging
+6. Embedding / Vectorize
+7. Vectorize query反映確認
+8. FTS5作成
+9. 新版current/active
+10. 旧版inactive / FTS削除 / chunks inactive
+11. 旧Vectorをbest-effort cleanup
+
+### No-op sync
+
+2段階で無駄な再処理を防止:
+1. Drive modifiedAtがD1現行版と同じ + メタデータ同一
+   - GAS側で即skip
+2. modifiedAtが変わっていても抽出本文SHA-256 + 主要メタデータが同一
+   - Worker側で新revisionを作らずskip
+   - source_modified_at / last_synced_atのみ更新
+   - audit action: source_unchanged
+
+### Revision jobs
+
+sync_jobs.job_type:
+- 初回: register
+- 現行版あり: update
+
+documents.last_synced_at:
+- finalize成功時にCURRENT_TIMESTAMP
+- 内容変更なし確認時もCURRENT_TIMESTAMP
+
+### source_missing
+
+Driveフォルダから原本が見つからなくても自動削除しない。
+管理者確認後:
+- documents.status = source_missing
+- chunks.is_active = 0
+- FTS削除
+- Vectorize IDsをbest-effort削除
+- D1のrevision履歴は保持
+- audit action: source_missing
+
+同じsourceIdの原本が再登録された場合:
+- 新revisionを通常どおり作成
+- 完成後にcurrent/activeへ切替
+
+### Audit
+
+Worker:
+- GET /admin/rag/audit?limit=100
+- GET /admin/rag/source-status?sourceId=...
+- POST /admin/rag/source-missing
+
+管理者ダッシュボード:
+- システム状態に監査ログ表示
+- Drive同期画面にD1側の現行Drive資料・source_modified_at・last_synced_atを表示
+
+監査ログへ通常の先生の質問本文は保存しない。
+
+Worker version: 5.11.0
