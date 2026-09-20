@@ -210,3 +210,56 @@ https://www.googleapis.com/auth/script.scriptapp
 ```
 
 更新後の初回操作で追加のGoogle認可画面が出る場合があります。
+
+
+## STEP6-8 / STEP6-9 自動運用
+
+既存の `runDailyRagMaintenanceStep5` 日次トリガーを拡張しています。
+
+毎朝6時台（JST）に:
+- RAGメンテナンス
+- Drive同期状態確認
+- 前月レポート自動保存
+- 運用監視
+- 改善候補確認
+- 状態変化時だけメール通知
+- Workerへ自動実行結果を記録
+
+### Script Properties
+
+既存:
+```text
+FAQ_ADMIN_TOKEN
+FAQ_FOLDER_ID
+WORKER_BASE_URL（任意）
+```
+
+任意:
+```text
+OPS_NOTIFY_EMAILS
+```
+
+複数通知先はカンマ区切り。
+未設定時はトリガー実行者自身のGoogleメールを使用します。
+
+### Google権限
+
+STEP6-9で次を追加:
+
+```text
+https://www.googleapis.com/auth/script.send_mail
+```
+
+manifest更新後は再承認してください。
+
+### 保存先
+
+FAQ_FOLDER_ID の直下に自動作成:
+
+```text
+校務AIアシスト_月次レポート/
+  校務AIアシスト_月次レポート_YYYY-MM.json
+```
+
+FAQ資料スキャンは親フォルダ直下のファイルのみ対象なので、
+サブフォルダ内の月次JSONはRAG登録候補になりません。
