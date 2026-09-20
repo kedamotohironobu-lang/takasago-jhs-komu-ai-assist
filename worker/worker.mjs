@@ -921,6 +921,24 @@ export default {
         }
       },200,origin || '*');
     }
+    if (request.method === 'GET' && url.pathname === '/health/staff-auth') {
+      const clientId = String(env?.GOOGLE_OAUTH_CLIENT_ID || '').trim();
+      const adminCount = parseCsvEnvList(env?.ADMIN_EMAILS).length;
+      const staffEmailCount = parseCsvEnvList(env?.STAFF_EMAILS).length;
+      const staffDomainCount = parseCsvEnvList(env?.STAFF_DOMAINS).length;
+      return json({
+        ok:true,
+        staffAuth:{
+          provider:'google',
+          configured:Boolean(clientId && (adminCount || staffEmailCount || staffDomainCount)),
+          googleClientId:clientId,
+          adminFallbackEnabled:Boolean(adminCount),
+          staffEmailCount,
+          staffDomainCount
+        }
+      },200,origin || '*');
+    }
+
 
     if (request.method === 'GET' && url.pathname === '/admin/auth/me') {
       const auth = await authenticateAdmin(request, env);
@@ -932,6 +950,22 @@ export default {
         admin:{
           authenticated:true,
           method:auth.method,
+          email:auth.email || '',
+          name:auth.name || ''
+        }
+      },200,origin || '*');
+    }
+
+    if (request.method === 'GET' && url.pathname === '/staff/auth/me') {
+      const auth = await authenticateStaff(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'STAFF_AUTH_REQUIRED',message:auth?.message || '校内FAQには職員ログインが必要です。'}},auth?.status || 401,origin || '*');
+      }
+      return json({
+        ok:true,
+        staff:{
+          authenticated:true,
+          role:auth.role || 'staff',
           email:auth.email || '',
           name:auth.name || ''
         }
