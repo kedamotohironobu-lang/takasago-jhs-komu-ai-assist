@@ -28,7 +28,7 @@
     optionArea:$('#option-area'), length:$('#length-select'), tone:$('#tone-select'),
     resultTitle:$('#result-title'), resultOutput:$('#result-output'), resultTip:$('#result-tip'),
     copyButton:$('[data-copy-result]'), quickButtons:document.querySelectorAll('[data-quick-edit]'),
-    helpButton:$('[data-help-button]'), settingsButton:$('[data-settings-button]'), toast:$('#app-toast'),
+    helpButton:$('[data-help-button]'), adminButton:$('[data-admin-button]'), toast:$('#app-toast'),
     submitButton:$('#editor-form .primary-action')
   };
 
@@ -37,9 +37,9 @@
   const stageStrong = document.querySelector('.stage-card strong');
   const stageText = document.querySelector('.stage-card p');
   const footerStage = document.querySelector('.site-footer p');
-  if (stageStrong) stageStrong.textContent = '現在：STEP 4 校内FAQ・RAG基盤実装';
-  if (stageText) stageText.textContent = '通常の9機能は本番AIへ接続済みです。校内FAQはCloudflare KVの承認資料だけを検索して回答するRAG方式へ移行しています。';
-  if (footerStage) footerStage.textContent = '高砂市立高砂中学校　校務AIアシスト — STEP 4 RAG基盤版';
+  if (stageStrong) stageStrong.textContent = '現在：STEP 5-7 管理者ダッシュボード実装';
+  if (stageText) stageText.textContent = 'D1・Vectorize・FTS5・Evidence Gateまで検証済みです。管理者ダッシュボードを追加し、次にGoogle管理者認証と資料管理を接続します。';
+  if (footerStage) footerStage.textContent = '高砂市立高砂中学校　校務AIアシスト — STEP 5-7 管理者ダッシュボード版';
 
   const tool = (id) => TOOLS[id] || TOOLS.parent;
 
@@ -195,8 +195,7 @@
   nodes.copyButton?.addEventListener('click', copyResult);
   nodes.quickButtons.forEach((button) => button.addEventListener('click', () => generateResult(button.dataset.quickEdit || '')));
   nodes.helpButton?.addEventListener('click', () => showToast('機能を選ぶ → 内容を入力 →「AIで作成する」の順です。'));
-  nodes.settingsButton?.addEventListener('click', async () => {
-    const cfg = await loadConfig();
-    showToast(cfg.workerBaseUrl ? 'STEP4：AI接続済み。校内FAQはRAG用資料ストレージの状態に応じて動作します。' : 'STEP4：Worker URLが未設定です。', 4200);
+  nodes.adminButton?.addEventListener('click', () => {
+    window.location.href = 'admin/';
   });
 })();
