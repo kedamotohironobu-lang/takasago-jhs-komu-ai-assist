@@ -74,7 +74,23 @@ function validatePayload(body) {
   if (quickEdit && !ALLOWED_QUICK.has(quickEdit)) return { ok:false, code:'INVALID_QUICK_EDIT', message:'調整方法が正しくありません。' };
   const previousOutput = body.previousOutput ? String(body.previousOutput) : '';
   if (previousOutput.length > MAX_PREVIOUS_CHARS) return { ok:false, code:'PREVIOUS_TOO_LONG', message:'前回出力が長すぎます。' };
-  return { ok:true, toolId, input, quickEdit, previousOutput, options:body.options || {} };
+
+  const previousUserQuestion = body.previousUserQuestion
+    ? String(body.previousUserQuestion).trim()
+    : '';
+  if (previousUserQuestion.length > 2000) {
+    return { ok:false, code:'PREVIOUS_QUESTION_TOO_LONG', message:'前の質問が長すぎます。' };
+  }
+
+  return {
+    ok:true,
+    toolId,
+    input,
+    quickEdit,
+    previousOutput,
+    previousUserQuestion,
+    options:body.options || {}
+  };
 }
 
 function buildMessages(valid) {
@@ -418,7 +434,46 @@ async function generateWithFallback(env, messages) {
   throw Object.assign(new Error('All providers failed'), { code:'ALL_PROVIDERS_FAILED', status:503, failures });
 }
 
-function buildRagAnswerMessages(question, evidence) {
+function shouldUsePreviousFaqQuestion(question, previousUserQuestion) {
+  const current = String(question || '').trim();
+  const previous = String(previousUserQuestion || '').trim();
+  if (!current || !previous) return false;
+
+  // 明示的な指示語・省略表現がある場合だけ直前の先生の質問を補助文脈にする。
+  // AIの前回答はここには渡さない。
+  if (/(^|[、。\s])(それ|その|これ|この場合|その場合|そのとき|その時|先ほど|さっき|同じ場合|では|じゃあ|ちなみに)/.test(current)) {
+    return true;
+  }
+
+  // ごく短い追質問（「いつですか？」「誰に出しますか？」等）。
+  if (current.length <= 18 && /^(いつ|どこ|誰|何|どう|何日|何時|提出先|期限)/.test(current)) {
+    return true;
+  }
+
+  return false;
+}
+
+function buildFaqRetrievalQuery(question, previousUserQuestion) {
+  const usePrevious = shouldUsePreviousFaqQuestion(question, previousUserQuestion);
+  if (!usePrevious) {
+    return {
+      query:String(question || '').trim(),
+      contextUsed:false,
+      previousUserQuestion:''
+    };
+  }
+
+  const previous = String(previousUserQuestion || '').trim();
+  const current = String(question || '').trim();
+
+  return {
+    query:`前の質問: ${previous}\n今回の質問: ${current}`,
+    contextUsed:true,
+    previousUserQuestion:previous
+  };
+}
+
+function buildRagAnswerMessages(question, evidence, previousUserQuestion='') {
   const evidenceText = evidence.map((block, index) => {
     const ids = Array.isArray(block.chunkIds) ? block.chunkIds.join(',') : '';
     const location = [
@@ -451,7 +506,11 @@ JSONだけを返してください。Markdownや説明文を付けないでく�
 
 evidenceChunkIdsには、提示されたchunkIds以外を絶対に入れないでください。`;
 
-  const user = `【質問】
+  const conversationContext = previousUserQuestion
+    ? `【直前の先生の質問】\n${previousUserQuestion}\n\n`
+    : '';
+
+  const user = `${conversationContext}【今回の質問】
 ${question}
 
 【承認済み検索根拠】
@@ -549,8 +608,9 @@ function buildRagSourceCards(evidence, usedChunkIds) {
     }));
 }
 
-async function answerRagQuestion(env, question) {
-  const retrieval = await hybridRetrieve(env, question, {
+async function answerRagQuestion(env, question, previousUserQuestion='') {
+  const context = buildFaqRetrievalQuery(question, previousUserQuestion);
+  const retrieval = await hybridRetrieve(env, context.query, {
     evidenceLimit:RAG_CONFIG.retrieval.defaultEvidenceBlocks
   });
 
@@ -562,13 +622,18 @@ async function answerRagQuestion(env, question) {
       provider:'retrieval-only',
       model:'none',
       sources:[],
+      contextUsed:context.contextUsed,
       retrieval
     };
   }
 
   const generated = await generateWithFallback(
     env,
-    buildRagAnswerMessages(question, retrieval.evidence)
+    buildRagAnswerMessages(
+      question,
+      retrieval.evidence,
+      context.contextUsed ? context.previousUserQuestion : ''
+    )
   );
 
   const decision = validateRagAiDecision(generated.text, retrieval.evidence);
@@ -583,6 +648,7 @@ async function answerRagQuestion(env, question) {
     reason:decision.reason,
     evidenceChunkIds:decision.evidenceChunkIds,
     sources,
+    contextUsed:context.contextUsed,
     retrieval
   };
 }
@@ -864,7 +930,7 @@ export default {
     const origin = pickCorsOrigin(request, env);
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
     if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token,Authorization','Access-Control-Max-Age':'86400','Vary':'Origin'}});
-    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.8.0'},200,origin || '*');
+    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.9.0'},200,origin || '*');
     if (request.method === 'GET' && url.pathname === '/health/providers') {
       return json({
         ok:true,
@@ -1189,7 +1255,11 @@ export default {
           },staffAuth?.status || 401,origin || '*');
         }
 
-        const answer = await answerRagQuestion(env, valid.input);
+        const answer = await answerRagQuestion(
+          env,
+          valid.input,
+          valid.previousUserQuestion || ''
+        );
         return json({
           ok:true,
           text:String(answer.answer || '登録資料では確認できません。').trim(),
@@ -1198,6 +1268,7 @@ export default {
           provider:answer.provider || 'retrieval-only',
           model:answer.model || 'none',
           requestId,
+          contextUsed:Boolean(answer.contextUsed),
           sources:Array.isArray(answer.sources) ? answer.sources : []
         },200,origin || '*');
       }
