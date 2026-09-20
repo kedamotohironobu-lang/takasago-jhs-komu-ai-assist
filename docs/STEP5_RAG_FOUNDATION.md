@@ -781,3 +781,98 @@ Worker:
 監査ログへ通常の先生の質問本文は保存しない。
 
 Worker version: 5.11.0
+
+
+## STEP5-13 自動メンテナンス
+
+目的:
+- 有効期限切れ資料をFAQ検索対象から自動除外
+- Drive変更を日次検出
+- 自動登録・自動削除は行わず管理者承認を維持
+- 停滞ジョブを検出
+- 日本時間で有効期間を判定
+
+### 有効期間
+
+検索時のD1 authoritative filter:
+- valid_from > 今日(JST) -> document_not_yet_valid
+- valid_until < 今日(JST) -> document_expired
+
+SQLiteでは:
+- date('now','+9 hours')
+
+有効期限日は当日いっぱい有効として扱い、翌日から期限切れ。
+
+### Worker maintenance
+
+POST /admin/rag/maintenance
+
+認証:
+- Google管理者Bearer token
+- またはGASのFAQ_ADMIN_TOKEN
+
+処理:
+1. current / active / approved の資料から期限切れを抽出
+2. chunks.is_active=0
+3. chunks_fts削除
+4. documents.status='expired'
+5. Vectorize IDをbest-effort削除
+6. audit_logsへ document_expired
+7. 24時間以上停滞しているsync_jobs件数を返す
+
+D1/FTSを正本として扱うため、Vectorize削除に一時失敗しても検索時authoritative filterで除外される。
+
+### GAS日次監視
+
+関数:
+- runDailyRagMaintenanceStep5()
+- getDailyMaintenanceStatusStep5()
+- installDailyMaintenanceTriggerStep5()
+- uninstallDailyMaintenanceTriggerStep5()
+
+有効化は管理者が明示的に行う。
+有効化後:
+- 毎日6時台
+- timezone Asia/Tokyo
+
+実行内容:
+1. Worker maintenance
+2. scanDriveSyncStep5()
+3. changed/new/missing/unchanged件数をScript Propertiesへ保存
+
+保存しないもの:
+- 資料本文
+- チャンク本文
+- 先生の質問
+- AI回答
+
+Driveの変更資料:
+- 自動登録しない
+- 管理者がGAS画面でプレビュー・承認後に登録
+
+Drive原本未確認:
+- 自動でsource_missingにしない
+- 管理者確認後のみ検索対象から外す
+
+### 管理者画面
+
+「システム状態」に:
+- 期限・状態を今すぐ点検
+- 実行結果
+- 監査ログ
+
+GAS画面「⑥ 自動メンテナンス」に:
+- 日次監視 有効/無効
+- 前回実行結果
+- 今すぐ実行
+- 日次監視を有効化
+- 日次監視を無効化
+
+### OAuth scope
+
+Apps Scriptトリガー管理のため追加:
+- https://www.googleapis.com/auth/script.scriptapp
+
+既存デプロイ更新時にGoogleの追加承認が求められる場合がある。
+
+Worker version: 5.12.0
