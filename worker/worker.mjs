@@ -19,8 +19,15 @@ import {
   cleanupRagTestDocument,
   cleanupRagTestSource
 } from './rag-store.mjs';
+import {
+  ensureOperationalSchema,
+  recordUsageEvent,
+  submitFeedback,
+  getUsageSummary,
+  getOperationsSummary
+} from './usage-telemetry.mjs';
 
-const WORKER_VERSION = '6.1.0';
+const WORKER_VERSION = '6.3.0';
 
 const COMMON_SYSTEM_PROMPT = `あなたは中学校教職員の校務を支援する文章作成アシスタントです。日本語で、明確で丁寧な、すぐに編集して使える案を作ります。
 提供された事実と提案を区別してください。氏名・役職・組織名・日付・時刻・金額・期限・連絡先を推測して補わないでください。未記載の必要事項は【要確認：項目名】としてください。年が示されていない日付には曜日を付けないでください。入力にない場所・連絡方法・締切・担当者等を「未定」と断定せず、【要確認：項目名】として扱ってください。相対日付を勝手に絶対日付へ変換しないでください。
@@ -1195,6 +1202,7 @@ export default {
       if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       try {
         const result = await ensureRagSchemaExtras(env);
+        await ensureOperationalSchema(env);
         return json({ok:true,result},200,origin || '*');
       } catch (e) {
         return json({ok:false,error:{code:e?.code || 'RAG_SCHEMA_ENSURE_FAILED',message:String(e?.message || 'RAG schema ensure failed')}},e?.status || 500,origin || '*');
@@ -1568,6 +1576,62 @@ export default {
     // STEP5-11: 旧KV FAQ管理APIは正式退役。
     // FAQ_KV binding自体は小規模cache/status用途への再利用に備えて残す。
 
+    if (request.method === 'GET' && url.pathname === '/admin/usage/summary') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      try {
+        const result = await getUsageSummary(env, url.searchParams.get('days') || 30);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'USAGE_SUMMARY_FAILED',message:String(e?.message || '利用状況を取得できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/operations/summary') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      try {
+        const result = await getOperationsSummary(env, url.searchParams.get('hours') || 24);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'OPERATIONS_SUMMARY_FAILED',message:String(e?.message || '運用監視情報を取得できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/feedback') {
+      const staffAuth = await authenticateStaff(request, env);
+      if (!staffAuth?.ok) {
+        return json({
+          ok:false,
+          error:{
+            code:staffAuth?.code || 'STAFF_AUTH_REQUIRED',
+            message:staffAuth?.message || 'フィードバックには職員ログインが必要です。'
+          }
+        },staffAuth?.status || 401,origin || '*');
+      }
+
+      let body;
+      try { body = await readJsonBody(request); }
+      catch {
+        return json({ok:false,error:{code:'INVALID_JSON',message:'リクエスト形式が正しくありません。'}},400,origin || '*');
+      }
+
+      try {
+        const result = await submitFeedback(env,{
+          requestId:body?.requestId,
+          rating:body?.rating,
+          reasonCode:body?.reasonCode
+        });
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'FEEDBACK_FAILED',message:String(e?.message || '評価を保存できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
     if (request.method !== 'POST' || url.pathname !== '/api/generate') return json({ok:false,error:{code:'NOT_FOUND',message:'Not found'}},404,origin || '*');
 
     const len = Number(request.headers.get('Content-Length') || 0);
@@ -1576,6 +1640,7 @@ export default {
     const valid = validatePayload(body);
     if (!valid.ok) return json({ok:false,error:{code:valid.code,message:valid.message}},400,origin || '*');
     const requestId = crypto.randomUUID();
+    const requestStartedAt = Date.now();
     try {
       if (valid.toolId === 'faq') {
         const staffAuth = await authenticateStaff(request, env);
@@ -1595,6 +1660,24 @@ export default {
           valid.input,
           valid.previousUserQuestion || ''
         );
+        const responseSources = Array.isArray(answer.sources) ? answer.sources : [];
+        try {
+          await recordUsageEvent(env,{
+            requestId,
+            toolId:'faq',
+            status:answer.status || 'unknown',
+            aiCalled:Boolean(answer.aiCalled),
+            provider:answer.provider || 'retrieval-only',
+            model:answer.model || 'none',
+            latencyMs:Date.now()-requestStartedAt,
+            evidenceCount:responseSources.length,
+            contextUsed:Boolean(answer.contextUsed),
+            sourceDocumentIds:responseSources.map(source=>source?.documentId).filter(Boolean)
+          });
+        } catch (telemetryError) {
+          console.error(JSON.stringify({requestId,code:'USAGE_LOG_FAILED',message:String(telemetryError?.message || '')}));
+        }
+
         return json({
           ok:true,
           text:String(answer.answer || '登録資料では確認できません。').trim(),
@@ -1604,16 +1687,49 @@ export default {
           model:answer.model || 'none',
           requestId,
           contextUsed:Boolean(answer.contextUsed),
-          sources:Array.isArray(answer.sources) ? answer.sources : []
+          sources:responseSources
         },200,origin || '*');
       }
 
       const result = await generateWithFallback(env, buildMessages(valid));
       const sanitized = sanitizeOutput(result.text, valid.input, valid.toolId);
+      try {
+        await recordUsageEvent(env,{
+          requestId,
+          toolId:valid.toolId,
+          status:'answer',
+          aiCalled:true,
+          provider:result.provider,
+          model:result.model,
+          latencyMs:Date.now()-requestStartedAt,
+          evidenceCount:0,
+          contextUsed:false,
+          sourceDocumentIds:[]
+        });
+      } catch (telemetryError) {
+        console.error(JSON.stringify({requestId,code:'USAGE_LOG_FAILED',message:String(telemetryError?.message || '')}));
+      }
       return json({ok:true,text:sanitized,provider:result.provider,model:result.model,requestId},200,origin || '*');
     } catch (e) {
       console.error(JSON.stringify({requestId,code:e?.code || 'AI_ERROR',failures:e?.failures || []}));
       const code=e?.code || 'ALL_PROVIDERS_FAILED';
+      try {
+        await recordUsageEvent(env,{
+          requestId,
+          toolId:valid.toolId,
+          status:'error',
+          aiCalled:false,
+          provider:'',
+          model:'',
+          latencyMs:Date.now()-requestStartedAt,
+          evidenceCount:0,
+          contextUsed:false,
+          sourceDocumentIds:[],
+          errorCode:code
+        });
+      } catch (telemetryError) {
+        console.error(JSON.stringify({requestId,code:'USAGE_LOG_FAILED',message:String(telemetryError?.message || '')}));
+      }
       const message=code==='NO_PROVIDER_CONFIGURED' ? 'AIのAPIキーが設定されていません。' : 'AIサービスへ接続できませんでした。';
       return json({ok:false,error:{code,message},requestId},e?.status || 503,origin || '*');
     }
