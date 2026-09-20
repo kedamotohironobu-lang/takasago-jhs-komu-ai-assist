@@ -1057,6 +1057,10 @@ function checkAndNotifyStep6_() {
       if (recipients.count) {
         mail = sendOperationsMailStep6_(recipients.emails, state, false);
         notificationStatus = mail.sent ? 'sent_initial_issue' : (mail.reason || 'send_failed');
+        if (mail.sent) {
+          props.setProperty(STEP6_LAST_ALERT_FINGERPRINT_PROPERTY, fingerprint);
+          props.setProperty(STEP6_LAST_ALERT_HAS_ISSUES_PROPERTY, 'true');
+        }
       } else {
         notificationStatus = 'recipient_missing';
       }
@@ -1282,6 +1286,20 @@ function runDailyRagMaintenanceStep5() {
 
     try {
       result.automation.notification = checkAndNotifyStep6_();
+      if (
+        result.automation.notification &&
+        result.automation.notification.ok === false
+      ) {
+        result.errors.push(
+          'Notification: ' +
+          String(
+            result.automation.notification.notificationStatus ||
+            result.automation.notification.mail &&
+              result.automation.notification.mail.reason ||
+            'send_failed'
+          )
+        );
+      }
     } catch (e) {
       result.errors.push('Notification check: ' + String(e.message || e));
     }
