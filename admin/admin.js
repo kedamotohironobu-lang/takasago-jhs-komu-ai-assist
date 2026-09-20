@@ -83,7 +83,15 @@
     acceptanceProgressText:$('#acceptance-progress-text'),
     acceptanceAutoChecks:$('#acceptance-auto-checks'),
     acceptanceReadinessChecks:$('#acceptance-readiness-checks'),
-    acceptanceManualChecks:$$('[data-acceptance-manual]')
+    acceptanceManualChecks:$('[data-acceptance-manual]'),
+    usageAuthRequired:$('#usage-auth-required'),
+    usageContent:$('#usage-content'),
+    refreshUsage:$('#refresh-usage'),
+    usageTopDocuments:$('#usage-top-documents'),
+    usageProviders:$('#usage-providers'),
+    usageTools:$('#usage-tools'),
+    operationsHealthBadge:$('#operations-health-badge'),
+    operationsAlerts:$('#operations-alerts')
   };
 
   function showToast(message, ms=2600){
@@ -175,6 +183,9 @@
     if(nodes.driveContent) nodes.driveContent.hidden=!unlocked;
     if(nodes.acceptanceAuthRequired) nodes.acceptanceAuthRequired.hidden=unlocked;
     if(nodes.acceptanceContent) nodes.acceptanceContent.hidden=!unlocked;
+    if(nodes.usageAuthRequired) nodes.usageAuthRequired.hidden=unlocked;
+    if(nodes.usageContent) nodes.usageContent.hidden=!unlocked;
+    if(nodes.refreshUsage) nodes.refreshUsage.disabled=!unlocked;
     if(nodes.runAcceptanceSuite) nodes.runAcceptanceSuite.disabled=!unlocked || state.acceptance.running;
     if(nodes.refreshJobs) nodes.refreshJobs.disabled=!unlocked;
     if(nodes.downloadBackup) nodes.downloadBackup.disabled=!unlocked;
@@ -229,6 +240,7 @@
         loadDocuments();
         loadAuditLogs();
         loadJobs();
+        loadUsageAnalytics();
       }
       return state.authenticated;
     }catch(err){
@@ -789,6 +801,108 @@
         nodes.runRagTest.disabled=false;
         nodes.runRagTest.textContent='検索する';
       }
+    }
+  }
+
+  function percentText(value){
+    const n=Number(value)||0;
+    return (n*100).toFixed(1)+'%';
+  }
+
+  function latencyText(value){
+    const ms=Number(value)||0;
+    if(!ms) return '—';
+    return ms<1000 ? Math.round(ms)+' ms' : (ms/1000).toFixed(1)+' 秒';
+  }
+
+  function renderUsageAnalytics(summary,operations){
+    const s=summary||{};
+    const totals=s.totals||{};
+    const feedback=s.feedback||{};
+
+    setText('usage-requests',Number(totals.requests||0).toLocaleString());
+    setText('usage-answer-rate',percentText(totals.answerRate));
+    setText('usage-insufficient-rate',percentText(totals.insufficientRate));
+    setText('usage-helpful-rate',feedback.total ? percentText(feedback.helpfulRate) : '評価なし');
+    setText('usage-ai-calls',Number(totals.aiCalls||0).toLocaleString());
+    setText('usage-errors',Number(totals.errors||0).toLocaleString());
+    setText('usage-latency',latencyText(totals.avgLatencyMs));
+    setText('usage-feedback-total',Number(feedback.total||0).toLocaleString());
+
+    if(nodes.usageTopDocuments){
+      const docs=Array.isArray(s.topDocuments)?s.topDocuments:[];
+      nodes.usageTopDocuments.innerHTML=docs.map(doc=>`
+        <tr>
+          <td>
+            <strong>${escapeHtml(doc.title||'無題')}</strong>
+            <small>${escapeHtml(doc.source_id||doc.sourceId||'')}</small>
+          </td>
+          <td>${Number(doc.use_count||doc.useCount||0).toLocaleString()}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="2">利用データはまだありません。</td></tr>';
+    }
+
+    if(nodes.usageProviders){
+      const rows=Array.isArray(s.providers)?s.providers:[];
+      nodes.usageProviders.innerHTML=rows.map(row=>`
+        <div class="usage-list-row">
+          <span>${escapeHtml(row.provider||'unknown')}</span>
+          <strong>${Number(row.count||0).toLocaleString()}回</strong>
+          <small>平均 ${escapeHtml(latencyText(row.avg_latency_ms||row.avgLatencyMs))}</small>
+        </div>
+      `).join('') || '<p class="empty-message">利用データはまだありません。</p>';
+    }
+
+    if(nodes.usageTools){
+      const rows=Array.isArray(s.tools)?s.tools:[];
+      nodes.usageTools.innerHTML=rows.map(row=>`
+        <div class="usage-list-row">
+          <span>${escapeHtml(row.tool_id||row.toolId||'unknown')}</span>
+          <strong>${Number(row.count||0).toLocaleString()}回</strong>
+        </div>
+      `).join('') || '<p class="empty-message">利用データはまだありません。</p>';
+    }
+
+    const o=operations||{};
+    setText('ops-requests',Number(o.requests||0).toLocaleString());
+    setText('ops-error-rate',percentText(o.errorRate));
+    setText('ops-latency',latencyText(o.avgLatencyMs));
+    setText('ops-jobs',Number(o.failedJobs||0)+' / '+Number(o.stalledJobs||0));
+
+    if(nodes.operationsHealthBadge){
+      const health=String(o.health||'ok');
+      nodes.operationsHealthBadge.textContent=
+        health==='error'?'要対応':(health==='warn'?'注意':'正常');
+      nodes.operationsHealthBadge.classList.toggle('accent',health==='ok');
+      nodes.operationsHealthBadge.classList.toggle('is-warn',health==='warn');
+      nodes.operationsHealthBadge.classList.toggle('is-error',health==='error');
+    }
+
+    if(nodes.operationsAlerts){
+      const alerts=Array.isArray(o.alerts)?o.alerts:[];
+      nodes.operationsAlerts.innerHTML=alerts.map(alert=>`
+        <div class="operations-alert ${alert.level==='error'?'is-error':'is-warn'}">
+          <strong>${alert.level==='error'?'要対応':'注意'}</strong>
+          <span>${escapeHtml(alert.message||'')}</span>
+        </div>
+      `).join('') || '<div class="operations-ok">✓ 直近24時間に警告条件はありません。</div>';
+    }
+  }
+
+  async function loadUsageAnalytics(){
+    if(!state.authenticated) return;
+    try{
+      const [usage,operations]=await Promise.all([
+        authJson('/admin/usage/summary?days=30'),
+        authJson('/admin/operations/summary?hours=24')
+      ]);
+      renderUsageAnalytics(
+        usage?.result||{},
+        operations?.result||{}
+      );
+    }catch(err){
+      console.error('usage analytics error',err);
+      showToast(err?.message||'利用状況を取得できませんでした。',3800);
     }
   }
 
@@ -1572,6 +1686,7 @@
       renderHealth(worker,d1,vector,gate);
       renderSummary(summary);
       renderReadiness(readiness);
+      if(state.authenticated) await loadUsageAnalytics();
       setText('last-updated',new Date().toLocaleString('ja-JP'));
     }catch(err){
       console.error(err);
@@ -1638,6 +1753,7 @@
     if(button) retryJob(button.dataset.jobId);
   });
   nodes.refreshDriveStatus?.addEventListener('click',loadDocuments);
+  nodes.refreshUsage?.addEventListener('click',loadUsageAnalytics);
   nodes.runMaintenance?.addEventListener('click',runMaintenanceNowAdmin);
   nodes.runRagTest?.addEventListener('click',runRagTest);
   nodes.registerAdminTest?.addEventListener('click',registerAdminSyntheticTest);
