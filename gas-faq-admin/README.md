@@ -147,3 +147,39 @@ https://takasago-jhs-komu-ai-assist.kedamoto-hironobu.workers.dev
 - FAQ_ADMIN_TOKENをGitHub/HTMLへ置かない
 - 個人情報・成績・健康情報等を含む資料は登録しない
 - 有効期間外・未承認・旧版は検索根拠にしない
+
+
+## Drive同期・新版差し替え
+
+STEP5-12では、Drive資料一覧が同期状態を表示します。
+
+- 変更あり
+- 新規
+- 最新
+- 原本未確認
+
+「最新」は再Embeddingしません。
+
+「変更あり」は:
+1. 確認して登録
+2. 本文・構造プレビュー
+3. メタデータ確認
+4. 承認チェック
+5. 新RAGへ登録
+
+同じsourceIdで登録するため、自動的に次revisionになります。
+新版がD1 / Vectorize / FTS5まで完成した後で旧版がinactiveになります。
+
+Drive更新日時が変わっていても本文SHA-256と主要メタデータが現行版と同じ場合は、新revisionを作らず同期日時だけ更新します。
+
+Driveフォルダから見つからない資料は自動削除しません。
+管理者が「検索対象から外す」を押した場合のみsource_missingとなり、FAQ検索から除外されます。D1履歴は保持します。
+
+監査ログ:
+- document_staged
+- document_activated
+- source_unchanged
+- source_missing
+- test cleanup
+
+旧KV用の /admin/faq/source 等は正式退役しており、現行GASでは使用しません。
