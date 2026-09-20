@@ -624,6 +624,78 @@ async function cleanupRagTestDocument(env, documentId, actorId = 'faq-admin') {
   };
 }
 
+
+async function cleanupRagTestSource(env, sourceId, actorId = 'faq-admin') {
+  const db = requireDb(env);
+  const vector = requireVector(env);
+  const normalized = normalizeSourceId(sourceId);
+
+  if (!normalized.startsWith('step5-test-')) {
+    throw fail('TEST_CLEANUP_FORBIDDEN', 'テスト用sourceId以外はこの機能では削除できません。', 403);
+  }
+
+  const docs = await db.prepare(
+    "SELECT document_id,title FROM documents WHERE source_id=? ORDER BY revision_no"
+  ).bind(normalized).all();
+  const documentRows = docs?.results || [];
+
+  if (!documentRows.length) {
+    return {
+      ok:true,
+      sourceId:normalized,
+      deletedDocuments:0,
+      deletedVectors:0,
+      mutationIds:[]
+    };
+  }
+
+  const vectors = await db.prepare(`
+    SELECT c.vector_id
+    FROM chunks c
+    JOIN documents d ON d.document_id=c.document_id
+    WHERE d.source_id=? AND c.vector_id IS NOT NULL
+  `).bind(normalized).all();
+  const vectorIds = (vectors?.results || []).map(r => r.vector_id).filter(Boolean);
+
+  const logId = `log-${crypto.randomUUID()}`;
+  await db.batch([
+    db.prepare(`
+      DELETE FROM chunks_fts
+      WHERE document_id IN (
+        SELECT document_id FROM documents WHERE source_id=?
+      )
+    `).bind(normalized),
+    db.prepare("DELETE FROM sync_jobs WHERE source_id=?").bind(normalized),
+    db.prepare("DELETE FROM documents WHERE source_id=?").bind(normalized),
+    db.prepare(`
+      INSERT INTO audit_logs (log_id,occurred_at,actor_id,action,entity_type,entity_id,summary,metadata_json)
+      VALUES (?,CURRENT_TIMESTAMP,?,'test_source_cleaned','source',?,?,?)
+    `).bind(
+      logId,actorId,normalized,
+      `STEP5テストsource「${normalized}」の全revisionを削除`,
+      JSON.stringify({ documentCount:documentRows.length, vectorCount:vectorIds.length })
+    )
+  ]);
+
+  const mutationIds = [];
+  for (let i = 0; i < vectorIds.length; i += 1000) {
+    try {
+      const mutation = await vector.deleteByIds(vectorIds.slice(i, i + 1000));
+      if (mutation?.mutationId) mutationIds.push(mutation.mutationId);
+    } catch {
+      // D1 cleanup is authoritative. Stray test vectors can be removed later.
+    }
+  }
+
+  return {
+    ok:true,
+    sourceId:normalized,
+    deletedDocuments:documentRows.length,
+    deletedVectors:vectorIds.length,
+    mutationIds
+  };
+}
+
 export {
   MAX_EXTRACTED_CHARS,
   MAX_CHUNKS_PER_DOCUMENT,
@@ -634,5 +706,6 @@ export {
   getRagDocumentStatus,
   indexNextRagDocument,
   finalizeRagDocument,
-  cleanupRagTestDocument
+  cleanupRagTestDocument,
+  cleanupRagTestSource
 };
