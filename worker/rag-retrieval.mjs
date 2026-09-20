@@ -193,8 +193,8 @@ async function loadAuthoritativeCandidates(env, fused) {
         WHEN d.is_current <> 1 THEN 'document_not_current'
         WHEN d.status <> 'active' THEN 'document_status_' || d.status
         WHEN d.approval_status <> 'approved' THEN 'document_not_approved'
-        WHEN d.valid_from IS NOT NULL AND date(d.valid_from) > date('now') THEN 'document_not_yet_valid'
-        WHEN d.valid_until IS NOT NULL AND date(d.valid_until) < date('now') THEN 'document_expired'
+        WHEN d.valid_from IS NOT NULL AND date(d.valid_from) > date('now','+9 hours') THEN 'document_not_yet_valid'
+        WHEN d.valid_until IS NOT NULL AND date(d.valid_until) < date('now','+9 hours') THEN 'document_expired'
         ELSE ''
       END AS exclusion_reason
     FROM chunks c
