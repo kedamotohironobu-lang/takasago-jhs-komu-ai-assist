@@ -10,6 +10,8 @@
     authenticated:false,
     admin:null,
     improvement:null,
+    improvementActions:null,
+    monthlyReport:null,
     acceptance:{
       running:false,
       autoChecks:[],
@@ -99,7 +101,14 @@
     refreshImprovement:$('#refresh-improvement'),
     downloadImprovementReport:$('#download-improvement-report'),
     improvementList:$('#improvement-list'),
-    improvementSummaryBadge:$('#improvement-summary-badge')
+    improvementSummaryBadge:$('#improvement-summary-badge'),
+    improvementCycleBody:$('#improvement-cycle-body'),
+    refreshImprovementActions:$('#refresh-improvement-actions'),
+    monthlyAuthRequired:$('#monthly-auth-required'),
+    monthlyContent:$('#monthly-content'),
+    monthlyReportMonth:$('#monthly-report-month'),
+    generateMonthlyReport:$('#generate-monthly-report'),
+    downloadMonthlyReport:$('#download-monthly-report')
   };
 
   function showToast(message, ms=2600){
@@ -210,6 +219,10 @@
     if(nodes.improvementContent) nodes.improvementContent.hidden=!unlocked;
     if(nodes.refreshImprovement) nodes.refreshImprovement.disabled=!unlocked;
     if(nodes.downloadImprovementReport) nodes.downloadImprovementReport.disabled=!unlocked || !state.improvement;
+    if(nodes.monthlyAuthRequired) nodes.monthlyAuthRequired.hidden=unlocked;
+    if(nodes.monthlyContent) nodes.monthlyContent.hidden=!unlocked;
+    if(nodes.generateMonthlyReport) nodes.generateMonthlyReport.disabled=!unlocked;
+    if(nodes.downloadMonthlyReport) nodes.downloadMonthlyReport.disabled=!unlocked || !state.monthlyReport;
     if(nodes.runAcceptanceSuite) nodes.runAcceptanceSuite.disabled=!unlocked || state.acceptance.running;
     if(nodes.refreshJobs) nodes.refreshJobs.disabled=!unlocked;
     if(nodes.downloadBackup) nodes.downloadBackup.disabled=!unlocked;
@@ -266,6 +279,7 @@
         loadJobs();
         loadUsageAnalytics();
         loadImprovementCandidates();
+        loadImprovementActions();
       }
       return state.authenticated;
     }catch(err){
@@ -948,6 +962,243 @@
     }
   }
 
+  function currentJstMonth(){
+    return new Date(Date.now()+9*60*60*1000).toISOString().slice(0,7);
+  }
+
+  function renderMonthlyReport(report){
+    const r=report||{};
+    const usage=r.usage||{};
+    const feedback=r.feedback||{};
+    const jobs=r.syncJobs||{};
+    const cycle=r.improvementCycle||{};
+    const snapshot=r.currentSnapshot||{};
+    const improvement=snapshot.improvement||{};
+
+    state.monthlyReport=r;
+
+    setText('monthly-report-title',(r.month||'—')+' 月次運用レポート');
+    setText(
+      'monthly-report-generated',
+      r.generatedAt ? '作成: '+new Date(r.generatedAt).toLocaleString('ja-JP')+' ／ Asia/Tokyo' : ''
+    );
+    setText('monthly-report-status','作成済み');
+    setText('monthly-requests',Number(usage.requests||0).toLocaleString());
+    setText('monthly-answer-rate',percentText(usage.answerRate));
+    setText('monthly-insufficient-rate',percentText(usage.insufficientRate));
+    setText('monthly-helpful-rate',feedback.total ? percentText(feedback.helpfulRate) : '評価なし');
+    setText('monthly-ai-calls',Number(usage.aiCalls||0).toLocaleString());
+    setText('monthly-errors',Number(usage.errors||0).toLocaleString());
+    setText('monthly-latency',latencyText(usage.avgLatencyMs));
+    setText('monthly-jobs',Number(jobs.completed||0)+' / '+Number(jobs.failed||0));
+    setText('monthly-cycle-open',Number(cycle.open||0).toLocaleString());
+    setText('monthly-cycle-progress',Number(cycle.inProgress||0).toLocaleString());
+    setText('monthly-cycle-done',Number(cycle.done||0).toLocaleString());
+    setText('monthly-cycle-completed',Number((cycle.completedThisMonth||[]).length).toLocaleString());
+    setText('monthly-active-docs',Number(snapshot.activeDocuments||0).toLocaleString());
+    setText('monthly-active-chunks',Number(snapshot.activeChunks||0).toLocaleString());
+    setText('monthly-improvement-actions',Number(improvement.actionCount||0).toLocaleString());
+    setText('monthly-improvement-watch',Number(improvement.watchCount||0).toLocaleString());
+
+    const docs=Array.isArray(r.topDocuments)?r.topDocuments:[];
+    const docsBody=$('#monthly-top-documents');
+    if(docsBody){
+      docsBody.innerHTML=docs.map(doc=>`
+        <tr>
+          <td>
+            <strong>${escapeHtml(doc.title||'無題')}</strong>
+            <small>${escapeHtml(doc.source_id||doc.sourceId||'')}</small>
+          </td>
+          <td>${Number(doc.use_count||doc.useCount||0).toLocaleString()}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="2">対象月の根拠資料利用はありません。</td></tr>';
+    }
+
+    const providers=$('#monthly-providers');
+    if(providers){
+      const rows=Array.isArray(r.providers)?r.providers:[];
+      providers.innerHTML=rows.map(row=>`
+        <div class="usage-list-row">
+          <span>${escapeHtml(row.provider||'unknown')}</span>
+          <strong>${Number(row.count||0).toLocaleString()}回</strong>
+          <small>平均 ${escapeHtml(latencyText(row.avg_latency_ms||row.avgLatencyMs))}</small>
+        </div>
+      `).join('') || '<p class="empty-message">対象月の利用はありません。</p>';
+    }
+
+    const tools=$('#monthly-tools');
+    if(tools){
+      const rows=Array.isArray(r.tools)?r.tools:[];
+      tools.innerHTML=rows.map(row=>`
+        <div class="usage-list-row">
+          <span>${escapeHtml(row.tool_id||row.toolId||'unknown')}</span>
+          <strong>${Number(row.count||0).toLocaleString()}回</strong>
+        </div>
+      `).join('') || '<p class="empty-message">対象月の利用はありません。</p>';
+    }
+
+    if(nodes.downloadMonthlyReport) nodes.downloadMonthlyReport.disabled=false;
+  }
+
+  async function loadMonthlyReport(){
+    if(!state.authenticated) return;
+    const month=String(nodes.monthlyReportMonth?.value||currentJstMonth());
+
+    try{
+      if(nodes.generateMonthlyReport){
+        nodes.generateMonthlyReport.disabled=true;
+        nodes.generateMonthlyReport.textContent='作成中…';
+      }
+      const data=await authJson('/admin/monthly-report?month='+encodeURIComponent(month));
+      renderMonthlyReport(data?.result||{});
+      showToast(month+' の月次レポートを作成しました。',3000);
+    }catch(err){
+      console.error('monthly report error',err);
+      showToast(err?.message||'月次レポートを作成できませんでした。',4200);
+    }finally{
+      if(nodes.generateMonthlyReport){
+        nodes.generateMonthlyReport.disabled=false;
+        nodes.generateMonthlyReport.textContent='レポート作成';
+      }
+    }
+  }
+
+  function downloadMonthlyReport(){
+    if(!state.monthlyReport){
+      showToast('先に月次レポートを作成してください。');
+      return;
+    }
+    const blob=new Blob(
+      [JSON.stringify(state.monthlyReport,null,2)],
+      {type:'application/json;charset=utf-8'}
+    );
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='takasago-jhs-monthly-report-'+String(state.monthlyReport.month||'report')+'.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    showToast('月次レポートを保存しました。',3000);
+  }
+
+  function actionMap(){
+    const actions=Array.isArray(state.improvementActions?.actions)
+      ? state.improvementActions.actions
+      : [];
+    return new Map(actions.map(action=>[action.candidateId,action]));
+  }
+
+  function renderImprovementActions(data){
+    const result=data||{};
+    state.improvementActions=result;
+    const summary=result.summary||{};
+    const actions=Array.isArray(result.actions)?result.actions:[];
+
+    setText('cycle-open-count',Number(summary.open||0).toLocaleString());
+    setText('cycle-progress-count',Number(summary.inProgress||0).toLocaleString());
+    setText('cycle-done-count',Number(summary.done||0).toLocaleString());
+    setText('cycle-dismissed-count',Number(summary.dismissed||0).toLocaleString());
+
+    if(nodes.improvementCycleBody){
+      const statusLabel={
+        open:'未対応',
+        in_progress:'対応中',
+        done:'完了',
+        dismissed:'見送り'
+      };
+      const levelLabel={
+        action:'要対応',
+        watch:'要確認',
+        info:'参考'
+      };
+
+      nodes.improvementCycleBody.innerHTML=actions.map(action=>`
+        <tr>
+          <td>
+            <strong>${escapeHtml(action.title||'改善項目')}</strong>
+            <small>${escapeHtml(action.candidateId||'')}</small>
+          </td>
+          <td>${escapeHtml(levelLabel[action.level]||action.level||'—')}</td>
+          <td><span class="status-pill ${action.status==='done'?'ok':''}">${escapeHtml(statusLabel[action.status]||action.status||'—')}</span></td>
+          <td>${formatDate(action.updatedAt)}</td>
+          <td>
+            <select class="cycle-status-select" data-action-candidate="${escapeHtml(action.candidateId)}">
+              <option value="open" ${action.status==='open'?'selected':''}>未対応</option>
+              <option value="in_progress" ${action.status==='in_progress'?'selected':''}>対応中</option>
+              <option value="done" ${action.status==='done'?'selected':''}>完了</option>
+              <option value="dismissed" ${action.status==='dismissed'?'selected':''}>見送り</option>
+            </select>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5">改善対応はまだありません。</td></tr>';
+    }
+
+    if(state.improvement) renderImprovementCandidates(state.improvement);
+  }
+
+  async function loadImprovementActions(){
+    if(!state.authenticated) return;
+    try{
+      const data=await authJson('/admin/improvement/actions');
+      renderImprovementActions(data?.result||{});
+    }catch(err){
+      console.error('improvement actions error',err);
+      showToast(err?.message||'改善サイクルを取得できませんでした。',3800);
+    }
+  }
+
+  async function saveImprovementAction(candidate,status){
+    if(!candidate?.id) return;
+    try{
+      await authJson('/admin/improvement/action',{
+        method:'POST',
+        body:JSON.stringify({
+          candidateId:candidate.id,
+          candidateType:candidate.type,
+          documentId:candidate.documentId||'',
+          sourceId:candidate.sourceId||'',
+          title:candidate.title||'改善候補',
+          level:candidate.level||'info',
+          status
+        })
+      });
+      await loadImprovementActions();
+      await loadAuditLogs();
+      showToast('改善対応を更新しました。',2600);
+    }catch(err){
+      console.error('improvement action update error',err);
+      showToast(err?.message||'改善対応を更新できませんでした。',4200);
+    }
+  }
+
+  async function changeImprovementActionStatus(candidateId,status){
+    const action=(state.improvementActions?.actions||[])
+      .find(item=>item.candidateId===candidateId);
+    if(!action) return;
+
+    try{
+      await authJson('/admin/improvement/action',{
+        method:'POST',
+        body:JSON.stringify({
+          candidateId:action.candidateId,
+          candidateType:action.candidateType,
+          documentId:action.documentId||'',
+          sourceId:action.sourceId||'',
+          title:action.title||'改善項目',
+          level:action.level||'info',
+          status
+        })
+      });
+      await Promise.allSettled([loadImprovementActions(),loadAuditLogs()]);
+      showToast('改善状態を更新しました。',2600);
+    }catch(err){
+      console.error(err);
+      showToast(err?.message||'改善状態を更新できませんでした。',4200);
+    }
+  }
+
   function renderImprovementCandidates(data){
     const result=data||{};
     const summary=result.summary||{};
@@ -1006,6 +1257,7 @@
         drive:'Drive同期'
       };
 
+      const currentActions=actionMap();
       nodes.improvementList.innerHTML=recommendations.map(item=>{
         const level=String(item.level||'info');
         const view=targetView[item.type]||'materials';
@@ -1013,12 +1265,22 @@
           typeLabel[item.type]||'改善候補',
           item.categoryName||''
         ].filter(Boolean).join(' ／ ');
+        const tracked=currentActions.get(item.id);
+        const trackedLabel={
+          open:'未対応',
+          in_progress:'対応中',
+          done:'完了',
+          dismissed:'見送り'
+        }[tracked?.status] || '';
 
         return `
           <article class="improvement-card level-${escapeHtml(level)}">
             <div class="improvement-card-head">
               <span class="improvement-level">${escapeHtml(levelLabel[level]||'参考')}</span>
               <span class="improvement-type">${escapeHtml(meta)}</span>
+              ${trackedLabel
+                ? '<span class="improvement-tracked">'+escapeHtml(trackedLabel)+'</span>'
+                : ''}
             </div>
             <h3>${escapeHtml(item.title||'改善候補')}</h3>
             <p>${escapeHtml(item.message||'')}</p>
@@ -1026,6 +1288,9 @@
               ? '<small>'+escapeHtml(item.sourceId)+'</small>'
               : ''}
             <div class="improvement-card-actions">
+              ${!tracked || tracked.status==='open'
+                ? '<button class="row-action start-improvement" type="button" data-candidate-id="'+escapeHtml(item.id)+'">対応中にする</button>'
+                : ''}
               <button
                 class="row-action improvement-go"
                 type="button"
@@ -1952,12 +2217,35 @@
   });
   nodes.refreshDriveStatus?.addEventListener('click',loadDocuments);
   nodes.refreshUsage?.addEventListener('click',loadUsageAnalytics);
-  nodes.refreshImprovement?.addEventListener('click',loadImprovementCandidates);
+  nodes.refreshImprovement?.addEventListener('click',async()=>{
+    await Promise.allSettled([loadImprovementCandidates(),loadImprovementActions()]);
+  });
   nodes.downloadImprovementReport?.addEventListener('click',downloadImprovementReport);
+  nodes.refreshImprovementActions?.addEventListener('click',loadImprovementActions);
+  nodes.generateMonthlyReport?.addEventListener('click',loadMonthlyReport);
+  nodes.downloadMonthlyReport?.addEventListener('click',downloadMonthlyReport);
   nodes.improvementList?.addEventListener('click',(event)=>{
+    const startButton=event.target.closest('.start-improvement');
+    if(startButton){
+      const candidate=(state.improvement?.recommendations||[])
+        .find(item=>item.id===startButton.dataset.candidateId);
+      if(candidate) saveImprovementAction(candidate,'in_progress');
+      return;
+    }
+
     const button=event.target.closest('.improvement-go');
     if(button){
       showView(button.dataset.goView||'materials');
+    }
+  });
+
+  nodes.improvementCycleBody?.addEventListener('change',(event)=>{
+    const select=event.target.closest('.cycle-status-select');
+    if(select){
+      changeImprovementActionStatus(
+        select.dataset.actionCandidate,
+        select.value
+      );
     }
   });
   nodes.runMaintenance?.addEventListener('click',runMaintenanceNowAdmin);
@@ -1983,10 +2271,16 @@
     if(nodes.searchResultGrid) nodes.searchResultGrid.hidden=true;
     state.acceptance.running=false;
     state.improvement=null;
+    state.improvementActions=null;
+    state.monthlyReport=null;
     renderAuthState();
     renderGoogleButton();
     showToast('ログアウトしました。');
   });
+
+  if(nodes.monthlyReportMonth && !nodes.monthlyReportMonth.value){
+    nodes.monthlyReportMonth.value=currentJstMonth();
+  }
 
   loadAcceptanceManualState();
   updateAcceptanceVerdict();
