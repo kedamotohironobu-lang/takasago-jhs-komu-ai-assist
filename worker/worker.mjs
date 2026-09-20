@@ -907,6 +907,8 @@ async function productionReadinessStatus(env) {
               AND status='active'
               AND approval_status='approved'
               AND source_id NOT LIKE 'step5-test-%'
+              AND (valid_from IS NULL OR TRIM(valid_from)='' OR date(valid_from) <= date('now','+9 hours'))
+              AND (valid_until IS NULL OR TRIM(valid_until)='' OR date(valid_until) >= date('now','+9 hours'))
           ) AS documents,
           (
             SELECT COUNT(*)
@@ -918,6 +920,8 @@ async function productionReadinessStatus(env) {
               AND d.status='active'
               AND d.approval_status='approved'
               AND d.source_id NOT LIKE 'step5-test-%'
+              AND (d.valid_from IS NULL OR TRIM(d.valid_from)='' OR date(d.valid_from) <= date('now','+9 hours'))
+              AND (d.valid_until IS NULL OR TRIM(d.valid_until)='' OR date(d.valid_until) >= date('now','+9 hours'))
           ) AS chunks
       `).first();
       activeDocuments = Number(row?.documents || 0);
