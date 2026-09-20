@@ -325,7 +325,128 @@
     return wrap;
   }
 
-  function appendFaqChatMessage(role, text, sources=[], contextUsed=false) {
+  async function submitFaqFeedback(requestId,rating,reasonCode='',container=null) {
+    if (!requestId || !state.staffAuthenticated || !state.staffIdToken) return false;
+
+    try {
+      const base = await workerBaseUrl();
+      if (!base) throw new Error('WORKER_NOT_CONFIGURED');
+
+      const res = await fetch(base + '/api/feedback', {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          'Authorization':'Bearer ' + state.staffIdToken
+        },
+        body:JSON.stringify({
+          requestId,
+          rating,
+          reasonCode:reasonCode || null
+        })
+      });
+
+      let data = {};
+      try { data = await res.json(); } catch {}
+      if (!res.ok || data?.ok === false) {
+        const err = new Error(data?.error?.message || '評価を保存できませんでした。');
+        err.code = data?.error?.code || ('HTTP_' + res.status);
+        throw err;
+      }
+
+      if (container) {
+        container.replaceChildren();
+        const done = document.createElement('span');
+        done.className = 'faq-feedback-done';
+        done.textContent = rating === 'helpful'
+          ? '✓「役に立った」として送信しました'
+          : '✓ 改善フィードバックを送信しました';
+        container.appendChild(done);
+      }
+      showToast('評価を送信しました。', 2400);
+      return true;
+    } catch (err) {
+      console.error('FAQ feedback error', err);
+      showToast(err?.message || '評価を送信できませんでした。', 3600);
+      return false;
+    }
+  }
+
+  function createFaqFeedback(requestId) {
+    const wrap = document.createElement('div');
+    wrap.className = 'faq-feedback';
+
+    const prompt = document.createElement('span');
+    prompt.className = 'faq-feedback-prompt';
+    prompt.textContent = 'この回答は役に立ちましたか？';
+
+    const helpful = document.createElement('button');
+    helpful.type = 'button';
+    helpful.className = 'faq-feedback-button';
+    helpful.textContent = '👍 役に立った';
+
+    const improve = document.createElement('button');
+    improve.type = 'button';
+    improve.className = 'faq-feedback-button';
+    improve.textContent = '△ 改善が必要';
+
+    wrap.append(prompt, helpful, improve);
+
+    helpful.addEventListener('click', async () => {
+      helpful.disabled = true;
+      improve.disabled = true;
+      const ok = await submitFaqFeedback(requestId,'helpful','',wrap);
+      if (!ok) {
+        helpful.disabled = false;
+        improve.disabled = false;
+      }
+    });
+
+    improve.addEventListener('click', () => {
+      helpful.hidden = true;
+      improve.hidden = true;
+
+      const reasons = document.createElement('div');
+      reasons.className = 'faq-feedback-reasons';
+
+      const title = document.createElement('span');
+      title.textContent = '理由を1つ選んでください';
+      reasons.appendChild(title);
+
+      const options = [
+        ['wrong_source','根拠が違う'],
+        ['answer_incomplete','回答が足りない'],
+        ['hard_to_understand','わかりにくい'],
+        ['outdated','情報が古い'],
+        ['other','その他']
+      ];
+
+      for (const [code,label] of options) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'faq-feedback-reason';
+        button.textContent = label;
+        button.addEventListener('click', async () => {
+          reasons.querySelectorAll('button').forEach(b => { b.disabled = true; });
+          const ok = await submitFaqFeedback(
+            requestId,
+            'needs_improvement',
+            code,
+            wrap
+          );
+          if (!ok) {
+            reasons.querySelectorAll('button').forEach(b => { b.disabled = false; });
+          }
+        });
+        reasons.appendChild(button);
+      }
+
+      wrap.appendChild(reasons);
+    });
+
+    return wrap;
+  }
+
+  function appendFaqChatMessage(role, text, sources=[], contextUsed=false, requestId='') {
     if (!nodes.faqChatLog) return;
 
     const article = document.createElement('article');
@@ -351,6 +472,10 @@
 
     if (role !== 'user' && Array.isArray(sources) && sources.length) {
       article.appendChild(createFaqSourceCards(sources));
+    }
+
+    if (role !== 'user' && requestId) {
+      article.appendChild(createFaqFeedback(requestId));
     }
 
     nodes.faqChatLog.appendChild(article);
@@ -419,7 +544,8 @@
         'assistant',
         String(data.text || '登録資料では確認できません。'),
         data.sources || [],
-        Boolean(data.contextUsed)
+        Boolean(data.contextUsed),
+        String(data.requestId || '')
       );
 
       // 次の検索に残すのは「先生が今入力した質問」だけ。
