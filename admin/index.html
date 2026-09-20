@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="admin.css?v=step6-1d">
+  <link rel="stylesheet" href="admin.css?v=step6-3">
 </head>
 <body>
   <div class="admin-shell">
@@ -129,7 +129,7 @@
           <article class="panel wide">
             <div class="panel-head">
               <h3>現在のSTEP</h3>
-              <span class="panel-badge accent">STEP 6-1</span>
+              <span class="panel-badge accent">STEP 6-3</span>
             </div>
             <div class="step-flow">
               <div class="step-chip is-done">D1</div>
@@ -154,7 +154,11 @@
               <div class="step-arrow">→</div>
               <div class="step-chip is-done">運用・復旧</div>
               <div class="step-arrow">→</div>
-              <div class="step-chip is-current">最終受入</div>
+              <div class="step-chip is-done">最終受入</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-done">利用品質</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-current">運用監視</div>
             </div>
           </article>
         </div>
@@ -408,17 +412,113 @@
       </section>
 
       <section class="admin-view" data-view-panel="usage" hidden>
-        <div class="section-head"><div><p class="eyebrow">CAPACITY</p><h2>利用状況</h2></div><button class="refresh-button" type="button" data-refresh>↻ 更新</button></div>
-        <div class="dashboard-grid">
-          <article class="panel wide">
-            <h3>RAG容量</h3>
-            <div class="status-list">
-              <div><span>有効資料</span><strong id="usage-docs">—</strong></div>
-              <div><span>有効チャンク</span><strong id="usage-chunks">—</strong></div>
-              <div><span>Vector dimensions</span><strong id="usage-vector">—</strong></div>
-              <div><span>D1推定Working Set</span><strong id="usage-d1">—</strong></div>
-            </div>
+        <div class="section-head">
+          <div><p class="eyebrow">QUALITY & OPERATIONS</p><h2>利用状況・品質改善</h2></div>
+          <button class="refresh-button" type="button" id="refresh-usage">↻ 更新</button>
+        </div>
+
+        <div class="auth-required-panel" id="usage-auth-required">
+          <div class="locked-icon">🔒</div>
+          <h3>管理者ログインが必要です</h3>
+          <p>利用状況の集計は質問本文・回答本文を保存せず、匿名化されたイベントのみ表示します。</p>
+        </div>
+
+        <div id="usage-content" hidden>
+          <article class="privacy-note">
+            <strong>プライバシー優先の集計</strong>
+            <p>保存するのは回答可否・処理時間・AIプロバイダー・根拠documentId・定型評価です。質問本文、回答本文、メールアドレス、IP、Tokenは保存しません。</p>
           </article>
+
+          <div class="metric-grid usage-metrics">
+            <article class="metric-card">
+              <span class="metric-label">30日利用件数</span>
+              <strong class="metric-value" id="usage-requests">—</strong>
+              <span class="metric-note">生成リクエスト</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">回答率</span>
+              <strong class="metric-value" id="usage-answer-rate">—</strong>
+              <span class="metric-note">根拠付き回答 / 全体</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">根拠不足率</span>
+              <strong class="metric-value" id="usage-insufficient-rate">—</strong>
+              <span class="metric-note">「確認できません」の割合</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">役に立った率</span>
+              <strong class="metric-value" id="usage-helpful-rate">—</strong>
+              <span class="metric-note">回答評価のうち helpful</span>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel">
+              <div class="panel-head">
+                <h3>応答品質</h3>
+                <span class="panel-badge">30日</span>
+              </div>
+              <div class="status-list">
+                <div><span>AI呼び出し</span><strong id="usage-ai-calls">—</strong></div>
+                <div><span>エラー</span><strong id="usage-errors">—</strong></div>
+                <div><span>平均応答時間</span><strong id="usage-latency">—</strong></div>
+                <div><span>評価件数</span><strong id="usage-feedback-total">—</strong></div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <h3>24時間 運用監視</h3>
+                <span class="panel-badge" id="operations-health-badge">確認中</span>
+              </div>
+              <div class="status-list">
+                <div><span>リクエスト</span><strong id="ops-requests">—</strong></div>
+                <div><span>エラー率</span><strong id="ops-error-rate">—</strong></div>
+                <div><span>平均応答時間</span><strong id="ops-latency">—</strong></div>
+                <div><span>失敗 / 停滞ジョブ</span><strong id="ops-jobs">—</strong></div>
+              </div>
+              <div class="operations-alerts" id="operations-alerts"></div>
+            </article>
+
+            <article class="panel wide">
+              <div class="panel-head">
+                <h3>よく使われる根拠資料</h3>
+                <span class="panel-badge">Top 10</span>
+              </div>
+              <div class="table-wrap">
+                <table class="admin-table">
+                  <thead><tr><th>資料名</th><th>利用回数</th></tr></thead>
+                  <tbody id="usage-top-documents"><tr><td colspan="2">利用データはまだありません。</td></tr></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <h3>AIプロバイダー</h3>
+                <span class="panel-badge">30日</span>
+              </div>
+              <div id="usage-providers" class="usage-list"><p class="empty-message">利用データはまだありません。</p></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <h3>機能別利用</h3>
+                <span class="panel-badge">30日</span>
+              </div>
+              <div id="usage-tools" class="usage-list"><p class="empty-message">利用データはまだありません。</p></div>
+            </article>
+
+            <article class="panel wide">
+              <h3>RAG容量</h3>
+              <div class="status-list">
+                <div><span>有効資料</span><strong id="usage-docs">—</strong></div>
+                <div><span>有効チャンク</span><strong id="usage-chunks">—</strong></div>
+                <div><span>Vector dimensions</span><strong id="usage-vector">—</strong></div>
+                <div><span>D1推定Working Set</span><strong id="usage-d1">—</strong></div>
+              </div>
+            </article>
+          </div>
         </div>
       </section>
 
@@ -542,6 +642,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step6-1d" defer></script>
+  <script src="admin.js?v=step6-3" defer></script>
 </body>
 </html>
