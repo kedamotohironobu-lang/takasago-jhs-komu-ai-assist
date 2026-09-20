@@ -200,10 +200,12 @@ async function stageRagDocument(env, payload, actorId = 'faq-admin') {
     "SELECT COALESCE(MAX(revision_no),0) AS max_revision FROM documents WHERE source_id=?",
     valid.sourceId
   );
-  const previous = await queryOne(db,
-    "SELECT document_id FROM documents WHERE source_id=? AND is_current=1 LIMIT 1",
-    valid.sourceId
-  );
+  const previous = await queryOne(db, `
+    SELECT document_id,revision_no,content_hash_sha256,source_modified_at,status
+    FROM documents
+    WHERE source_id=? AND is_current=1
+    LIMIT 1
+  `, valid.sourceId);
 
   const revisionNo = Number(revisionRow?.max_revision || 0) + 1;
   const documentId = `doc-${crypto.randomUUID()}`;
@@ -254,9 +256,10 @@ async function stageRagDocument(env, payload, actorId = 'faq-admin') {
         items_total,items_processed,items_succeeded,items_failed,current_step,progress_percent,
         estimated_chunk_count,estimated_vector_dimensions,actual_vector_dimensions,
         retry_count,created_by,created_at,updated_at
-      ) VALUES (?,'register','waiting_review',?,?,?,?,?,0,0,0,'staged',40,?,?,0,0,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+      ) VALUES (?,?,'waiting_review',?,?,?,?,?,0,0,0,'staged',40,?,?,0,0,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
     `).bind(
-      jobId,documentId,previous?.document_id || null,valid.sourceId,valid.driveFileId || null,
+      jobId,previous?.document_id ? 'update' : 'register',
+      documentId,previous?.document_id || null,valid.sourceId,valid.driveFileId || null,
       chunks.length,chunks.length,chunks.length * RAG_CONFIG.embedding.dimensions,actorId
     ),
     db.prepare(`
@@ -289,7 +292,14 @@ async function stageRagDocument(env, payload, actorId = 'faq-admin') {
     `).bind(
       logId,actorId,documentId,
       `「${valid.title}」をステージング登録`,
-      JSON.stringify({ sourceId:valid.sourceId, revisionNo, chunkCount:chunks.length })
+      JSON.stringify({
+        sourceId:valid.sourceId,
+        revisionNo,
+        previousDocumentId:previous?.document_id || null,
+        jobType:previous?.document_id ? 'update' : 'register',
+        sourceModifiedAt:valid.sourceModifiedAt || null,
+        chunkCount:chunks.length
+      })
     )
   ];
 
@@ -530,7 +540,8 @@ async function finalizeRagDocument(env, documentId, actorId = 'faq-admin') {
   `).bind(documentId));
   statements.push(db.prepare(`
     UPDATE documents
-    SET is_current=1,status='active',vector_status='ready',updated_at=CURRENT_TIMESTAMP
+    SET is_current=1,status='active',vector_status='ready',
+        last_synced_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
     WHERE document_id=?
   `).bind(documentId));
   statements.push(db.prepare(`
@@ -570,6 +581,102 @@ async function finalizeRagDocument(env, documentId, actorId = 'faq-admin') {
     oldVectorCleanupCount:oldVectorIds.length,
     cleanupMutationId,
     cleanupWarning
+  };
+}
+
+async function getRagSourceState(env, sourceId) {
+  const db = requireDb(env);
+  const normalized = normalizeSourceId(sourceId);
+
+  const current = await queryOne(db, `
+    SELECT
+      d.document_id,d.source_id,d.revision_no,d.is_current,d.source_type,d.drive_file_id,
+      d.file_name,d.title,d.mime_type,d.category_id,c.name AS category_name,
+      d.owner_department,d.version_label,d.file_size_bytes,d.page_count,d.sheet_count,d.slide_count,
+      d.content_hash_sha256,d.source_modified_at,d.valid_from,d.valid_until,
+      d.approval_status,d.status,d.extraction_status,d.extracted_char_count,d.chunk_count,
+      d.vector_status,d.vectorized_at,d.last_synced_at,d.created_at,d.updated_at,d.deleted_at
+    FROM documents d
+    LEFT JOIN categories c ON c.category_id=d.category_id
+    WHERE d.source_id=? AND d.is_current=1
+    LIMIT 1
+  `, normalized);
+
+  const revisions = await queryOne(db,
+    "SELECT COUNT(*) AS count FROM documents WHERE source_id=?",
+    normalized
+  );
+
+  return {
+    ok:true,
+    sourceId:normalized,
+    exists:Boolean(current),
+    current:current || null,
+    revisionCount:Number(revisions?.count || 0)
+  };
+}
+
+async function markRagSourceMissing(env, sourceId, actorId = 'faq-admin') {
+  const db = requireDb(env);
+  const vector = requireVector(env);
+  const normalized = normalizeSourceId(sourceId);
+
+  const doc = await queryOne(db, `
+    SELECT document_id,title,status,is_current
+    FROM documents
+    WHERE source_id=? AND is_current=1
+    LIMIT 1
+  `, normalized);
+
+  if (!doc) {
+    return { ok:true, sourceId:normalized, changed:false, reason:'CURRENT_DOCUMENT_NOT_FOUND' };
+  }
+  if (doc.status === 'source_missing') {
+    return { ok:true, sourceId:normalized, changed:false, reason:'ALREADY_SOURCE_MISSING', documentId:doc.document_id };
+  }
+
+  const rows = await db.prepare(
+    "SELECT vector_id FROM chunks WHERE document_id=? AND vector_id IS NOT NULL"
+  ).bind(doc.document_id).all();
+  const vectorIds = (rows?.results || []).map(r => r.vector_id).filter(Boolean);
+
+  const logId = `log-${crypto.randomUUID()}`;
+  await db.batch([
+    db.prepare("DELETE FROM chunks_fts WHERE document_id=?").bind(doc.document_id),
+    db.prepare("UPDATE chunks SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE document_id=?").bind(doc.document_id),
+    db.prepare(`
+      UPDATE documents
+      SET status='source_missing',updated_at=CURRENT_TIMESTAMP
+      WHERE document_id=?
+    `).bind(doc.document_id),
+    db.prepare(`
+      INSERT INTO audit_logs (log_id,occurred_at,actor_id,action,entity_type,entity_id,summary,metadata_json)
+      VALUES (?,CURRENT_TIMESTAMP,?,'source_missing','document',?,?,?)
+    `).bind(
+      logId,actorId,doc.document_id,
+      `「${doc.title}」をDrive原本未確認として検索対象から除外`,
+      JSON.stringify({ sourceId:normalized, vectorCount:vectorIds.length })
+    )
+  ]);
+
+  const mutationIds = [];
+  for (let i = 0; i < vectorIds.length; i += 1000) {
+    try {
+      const mutation = await vector.deleteByIds(vectorIds.slice(i, i + 1000));
+      if (mutation?.mutationId) mutationIds.push(mutation.mutationId);
+    } catch {
+      // D1/FTS is authoritative; stale vectors are filtered by D1.
+    }
+  }
+
+  return {
+    ok:true,
+    sourceId:normalized,
+    documentId:doc.document_id,
+    changed:true,
+    status:'source_missing',
+    deactivatedChunks:vectorIds.length,
+    mutationIds
   };
 }
 
@@ -706,6 +813,8 @@ export {
   getRagDocumentStatus,
   indexNextRagDocument,
   finalizeRagDocument,
+  getRagSourceState,
+  markRagSourceMissing,
   cleanupRagTestDocument,
   cleanupRagTestSource
 };
