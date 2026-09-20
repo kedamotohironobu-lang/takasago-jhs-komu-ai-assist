@@ -1429,6 +1429,7 @@ async function cleanupRagTestDocument(env, documentId, actorId = 'faq-admin') {
   const logId = `log-${crypto.randomUUID()}`;
   await db.batch([
     db.prepare("DELETE FROM chunks_fts WHERE document_id=?").bind(documentId),
+    db.prepare("DELETE FROM usage_sources WHERE document_id=?").bind(documentId),
     db.prepare("DELETE FROM sync_jobs WHERE document_id=? OR previous_document_id=?").bind(documentId, documentId),
     db.prepare("DELETE FROM documents WHERE document_id=?").bind(documentId),
     db.prepare(`
@@ -1496,6 +1497,12 @@ async function cleanupRagTestSource(env, sourceId, actorId = 'faq-admin') {
   await db.batch([
     db.prepare(`
       DELETE FROM chunks_fts
+      WHERE document_id IN (
+        SELECT document_id FROM documents WHERE source_id=?
+      )
+    `).bind(normalized),
+    db.prepare(`
+      DELETE FROM usage_sources
       WHERE document_id IN (
         SELECT document_id FROM documents WHERE source_id=?
       )
