@@ -9,6 +9,7 @@
     idToken:sessionStorage.getItem('takasagoAdminIdToken') || '',
     authenticated:false,
     admin:null,
+    improvement:null,
     acceptance:{
       running:false,
       autoChecks:[],
@@ -92,7 +93,13 @@
     usageTools:$('#usage-tools'),
     usageFeedbackReasons:$('#usage-feedback-reasons'),
     operationsHealthBadge:$('#operations-health-badge'),
-    operationsAlerts:$('#operations-alerts')
+    operationsAlerts:$('#operations-alerts'),
+    improvementAuthRequired:$('#improvement-auth-required'),
+    improvementContent:$('#improvement-content'),
+    refreshImprovement:$('#refresh-improvement'),
+    downloadImprovementReport:$('#download-improvement-report'),
+    improvementList:$('#improvement-list'),
+    improvementSummaryBadge:$('#improvement-summary-badge')
   };
 
   function showToast(message, ms=2600){
@@ -199,6 +206,10 @@
     if(nodes.usageAuthRequired) nodes.usageAuthRequired.hidden=unlocked;
     if(nodes.usageContent) nodes.usageContent.hidden=!unlocked;
     if(nodes.refreshUsage) nodes.refreshUsage.disabled=!unlocked;
+    if(nodes.improvementAuthRequired) nodes.improvementAuthRequired.hidden=unlocked;
+    if(nodes.improvementContent) nodes.improvementContent.hidden=!unlocked;
+    if(nodes.refreshImprovement) nodes.refreshImprovement.disabled=!unlocked;
+    if(nodes.downloadImprovementReport) nodes.downloadImprovementReport.disabled=!unlocked || !state.improvement;
     if(nodes.runAcceptanceSuite) nodes.runAcceptanceSuite.disabled=!unlocked || state.acceptance.running;
     if(nodes.refreshJobs) nodes.refreshJobs.disabled=!unlocked;
     if(nodes.downloadBackup) nodes.downloadBackup.disabled=!unlocked;
@@ -254,6 +265,7 @@
         loadAuditLogs();
         loadJobs();
         loadUsageAnalytics();
+        loadImprovementCandidates();
       }
       return state.authenticated;
     }catch(err){
@@ -934,6 +946,162 @@
       console.error('usage analytics error',err);
       showToast(err?.message||'利用状況を取得できませんでした。',3800);
     }
+  }
+
+  function renderImprovementCandidates(data){
+    const result=data||{};
+    const summary=result.summary||{};
+    const recommendations=Array.isArray(result.recommendations)
+      ? result.recommendations
+      : [];
+
+    state.improvement=result;
+
+    setText('improvement-action-count',Number(summary.actionCount||0).toLocaleString());
+    setText('improvement-watch-count',Number(summary.watchCount||0).toLocaleString());
+    setText('improvement-unused-count',Number(summary.unusedDocuments||0).toLocaleString());
+    setText(
+      'improvement-insufficient-rate',
+      Number(summary.faqRequests||0)
+        ? percentText(summary.faqInsufficientRate)
+        : 'データなし'
+    );
+
+    if(nodes.improvementSummaryBadge){
+      const actionCount=Number(summary.actionCount||0);
+      const watchCount=Number(summary.watchCount||0);
+      nodes.improvementSummaryBadge.textContent=
+        actionCount>0
+          ? '要対応 '+actionCount+'件'
+          : (watchCount>0 ? '要確認 '+watchCount+'件' : '大きな改善候補なし');
+      nodes.improvementSummaryBadge.classList.toggle('accent',actionCount===0 && watchCount===0);
+      nodes.improvementSummaryBadge.classList.toggle('is-warn',actionCount===0 && watchCount>0);
+      nodes.improvementSummaryBadge.classList.toggle('is-error',actionCount>0);
+    }
+
+    if(nodes.improvementList){
+      const levelLabel={
+        action:'要対応',
+        watch:'要確認',
+        info:'参考'
+      };
+      const typeLabel={
+        global_coverage:'FAQ全体',
+        document_status:'資料状態',
+        quality_feedback:'品質評価',
+        expiring_soon:'期限',
+        unused_document:'利用状況'
+      };
+      const targetView={
+        global_coverage:'add',
+        document_status:'materials',
+        quality_feedback:'search',
+        expiring_soon:'drive',
+        unused_document:'materials'
+      };
+      const targetLabel={
+        add:'資料を追加',
+        materials:'資料管理',
+        search:'RAG検索テスト',
+        drive:'Drive同期'
+      };
+
+      nodes.improvementList.innerHTML=recommendations.map(item=>{
+        const level=String(item.level||'info');
+        const view=targetView[item.type]||'materials';
+        const meta=[
+          typeLabel[item.type]||'改善候補',
+          item.categoryName||''
+        ].filter(Boolean).join(' ／ ');
+
+        return `
+          <article class="improvement-card level-${escapeHtml(level)}">
+            <div class="improvement-card-head">
+              <span class="improvement-level">${escapeHtml(levelLabel[level]||'参考')}</span>
+              <span class="improvement-type">${escapeHtml(meta)}</span>
+            </div>
+            <h3>${escapeHtml(item.title||'改善候補')}</h3>
+            <p>${escapeHtml(item.message||'')}</p>
+            ${item.sourceId
+              ? '<small>'+escapeHtml(item.sourceId)+'</small>'
+              : ''}
+            <div class="improvement-card-actions">
+              <button
+                class="row-action improvement-go"
+                type="button"
+                data-go-view="${escapeHtml(view)}"
+              >${escapeHtml(targetLabel[view]||'確認する')}へ</button>
+            </div>
+          </article>
+        `;
+      }).join('') || `
+        <div class="improvement-empty">
+          <strong>✓ 現在、大きな改善候補はありません。</strong>
+          <p>利用が増えると、匿名利用集計と定型評価から改善候補を自動抽出します。</p>
+        </div>
+      `;
+    }
+
+    if(nodes.downloadImprovementReport){
+      nodes.downloadImprovementReport.disabled=false;
+    }
+  }
+
+  async function loadImprovementCandidates(){
+    if(!state.authenticated) return;
+    try{
+      if(nodes.refreshImprovement){
+        nodes.refreshImprovement.disabled=true;
+        nodes.refreshImprovement.textContent='確認中…';
+      }
+      const data=await authJson('/admin/improvement/candidates?days=30');
+      renderImprovementCandidates(data?.result||{});
+    }catch(err){
+      console.error('improvement candidates error',err);
+      showToast(err?.message||'改善候補を取得できませんでした。',4200);
+      if(nodes.improvementList){
+        nodes.improvementList.innerHTML='<p class="empty-message">改善候補を取得できませんでした。</p>';
+      }
+    }finally{
+      if(nodes.refreshImprovement){
+        nodes.refreshImprovement.disabled=false;
+        nodes.refreshImprovement.textContent='↻ 改善候補を更新';
+      }
+    }
+  }
+
+  function downloadImprovementReport(){
+    if(!state.improvement){
+      showToast('先に改善候補を更新してください。');
+      return;
+    }
+
+    const report={
+      schema:'takasago-jhs-faq-improvement-report-v1',
+      generatedAt:new Date().toISOString(),
+      step:'STEP6-5',
+      containsQuestionText:false,
+      containsAnswerText:false,
+      containsUserEmail:false,
+      days:Number(state.improvement.days||30),
+      summary:state.improvement.summary||{},
+      recommendations:state.improvement.recommendations||[]
+    };
+
+    const blob=new Blob(
+      [JSON.stringify(report,null,2)],
+      {type:'application/json;charset=utf-8'}
+    );
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const stamp=new Date().toISOString().replace(/[:.]/g,'-');
+    a.href=url;
+    a.download='takasago-jhs-faq-improvement-'+stamp+'.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    showToast('改善候補レポートを保存しました。',3200);
   }
 
   function renderSummary(data){
@@ -1784,6 +1952,14 @@
   });
   nodes.refreshDriveStatus?.addEventListener('click',loadDocuments);
   nodes.refreshUsage?.addEventListener('click',loadUsageAnalytics);
+  nodes.refreshImprovement?.addEventListener('click',loadImprovementCandidates);
+  nodes.downloadImprovementReport?.addEventListener('click',downloadImprovementReport);
+  nodes.improvementList?.addEventListener('click',(event)=>{
+    const button=event.target.closest('.improvement-go');
+    if(button){
+      showView(button.dataset.goView||'materials');
+    }
+  });
   nodes.runMaintenance?.addEventListener('click',runMaintenanceNowAdmin);
   nodes.runRagTest?.addEventListener('click',runRagTest);
   nodes.registerAdminTest?.addEventListener('click',registerAdminSyntheticTest);
@@ -1806,6 +1982,7 @@
     if(nodes.driveSyncBody) nodes.driveSyncBody.innerHTML='<tr><td colspan="5">管理者ログイン後に表示します。</td></tr>';
     if(nodes.searchResultGrid) nodes.searchResultGrid.hidden=true;
     state.acceptance.running=false;
+    state.improvement=null;
     renderAuthState();
     renderGoogleButton();
     showToast('ログアウトしました。');
