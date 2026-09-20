@@ -706,3 +706,78 @@ function testHybridRetrievalNegativeStep5() {
   console.log(JSON.stringify(result, null, 2));
   return result;
 }
+
+
+/**
+ * STEP5-6: 十分な根拠がある質問ではAI回答することを確認します。
+ */
+function testRagAnswerPositiveStep5() {
+  const result = workerRequest_('/admin/rag/answer-test', 'post', {
+    query: 'テスト備品Aは何曜日に確認しますか？'
+  }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * STEP5-6: 言い換え質問でも十分な根拠があればAI回答することを確認します。
+ */
+function testRagAnswerParaphraseStep5() {
+  const result = workerRequest_('/admin/rag/answer-test', 'post', {
+    query: '備品Aのチェックをする日はいつですか？'
+  }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * STEP5-6: 無関係質問ではAIを呼ばず insufficient になることを確認します。
+ */
+function testRagAnswerNegativeStep5() {
+  const result = workerRequest_('/admin/rag/answer-test', 'post', {
+    query: '修学旅行の集合時間は何時ですか？'
+  }, true);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * STEP5-6: 3ケースを連続確認します。
+ * 期待:
+ * - positive: status=answer, aiCalled=true
+ * - paraphrase: status=answer, aiCalled=true
+ * - negative: status=insufficient, aiCalled=false
+ */
+function runRagAnswerGateStep5() {
+  const positive = testRagAnswerPositiveStep5();
+  const paraphrase = testRagAnswerParaphraseStep5();
+  const negative = testRagAnswerNegativeStep5();
+
+  const p = positive && positive.result ? positive.result : {};
+  const q = paraphrase && paraphrase.result ? paraphrase.result : {};
+  const n = negative && negative.result ? negative.result : {};
+
+  const checks = {
+    positiveAnswer: p.status === 'answer' && p.aiCalled === true,
+    paraphraseAnswer: q.status === 'answer' && q.aiCalled === true,
+    negativeBlocked: n.status === 'insufficient' && n.aiCalled === false
+  };
+
+  const result = {
+    ok: checks.positiveAnswer && checks.paraphraseAnswer && checks.negativeBlocked,
+    checks: checks,
+    positive: positive,
+    paraphrase: paraphrase,
+    negative: negative
+  };
+
+  console.log(JSON.stringify(result, null, 2));
+
+  if (!result.ok) {
+    throw new Error(
+      'STEP5-6の期待結果と一致しない項目があります。実行ログを確認してください。'
+    );
+  }
+
+  return result;
+}
