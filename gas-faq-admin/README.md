@@ -183,3 +183,30 @@ Driveフォルダから見つからない資料は自動削除しません。
 - test cleanup
 
 旧KV用の /admin/faq/source 等は正式退役しており、現行GASでは使用しません。
+
+
+## 自動メンテナンス
+
+STEP5-13では、GAS管理画面の「⑥ 自動メンテナンス」から日次監視を有効化できます。
+
+日次監視:
+- 毎日6時台（Asia/Tokyo）
+- 期限切れ資料を検索対象から除外
+- Driveの新規・変更・原本未確認件数を検出
+- 24時間以上停滞しているRAGジョブ数を確認
+
+安全上、次は自動では行いません:
+- Drive変更資料の新版登録
+- PDF OCR
+- 原本未確認資料のsource_missing化
+- 資料削除
+
+これらは管理者のプレビュー・確認・承認が必要です。
+
+Apps Scriptの appsscript.json には、トリガー管理用に次のscopeを追加しています。
+
+```text
+https://www.googleapis.com/auth/script.scriptapp
+```
+
+更新後の初回操作で追加のGoogle認可画面が出る場合があります。
