@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="admin.css?v=step5-13">
+  <link rel="stylesheet" href="admin.css?v=step5-14">
 </head>
 <body>
   <div class="admin-shell">
@@ -127,7 +127,7 @@
           <article class="panel wide">
             <div class="panel-head">
               <h3>現在のSTEP</h3>
-              <span class="panel-badge accent">STEP 5-13</span>
+              <span class="panel-badge accent">STEP 5-14</span>
             </div>
             <div class="step-flow">
               <div class="step-chip is-done">D1</div>
@@ -148,7 +148,9 @@
               <div class="step-arrow">→</div>
               <div class="step-chip is-done">Drive同期・版管理</div>
               <div class="step-arrow">→</div>
-              <div class="step-chip is-current">自動メンテナンス</div>
+              <div class="step-chip is-done">自動メンテナンス</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-current">運用・復旧</div>
             </div>
           </article>
         </div>
@@ -176,6 +178,7 @@
                   <th>承認</th>
                   <th>チャンク</th>
                   <th>更新</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody id="documents-body"></tbody>
@@ -371,6 +374,46 @@
           <div class="readiness-warnings" id="readiness-warnings" hidden></div>
         </article>
 
+        <article class="panel recovery-panel">
+          <div class="panel-head">
+            <div>
+              <h3>同期ジョブ・再試行</h3>
+              <p class="panel-description">failed、または24時間以上停滞したジョブだけ再試行できます。</p>
+            </div>
+            <button class="refresh-button" type="button" id="refresh-jobs">↻ 更新</button>
+          </div>
+          <div class="table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>資料</th>
+                  <th>種別</th>
+                  <th>状態</th>
+                  <th>進捗</th>
+                  <th>再試行</th>
+                </tr>
+              </thead>
+              <tbody id="jobs-body">
+                <tr><td colspan="5">管理者ログイン後に表示します。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel backup-panel">
+          <div class="panel-head">
+            <div>
+              <h3>バックアップ・復旧</h3>
+              <p class="panel-description">Driveを本文の正本とし、D1の資料メタデータ・ハッシュ・監査・ジョブ情報を復旧マニフェストとして保存します。</p>
+            </div>
+            <button class="refresh-button" type="button" id="download-backup">バックアップマニフェスト</button>
+          </div>
+          <div class="backup-note">
+            <strong>安全仕様</strong>
+            <p>このファイルにはチャンク本文・APIキー・認証Tokenを含めません。完全復旧時はDrive原本から本文を再抽出・再Embeddingします。</p>
+          </div>
+        </article>
+
         <article class="panel audit-panel">
           <div class="panel-head">
             <div>
@@ -403,6 +446,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step5-13" defer></script>
+  <script src="admin.js?v=step5-14" defer></script>
 </body>
 </html>
