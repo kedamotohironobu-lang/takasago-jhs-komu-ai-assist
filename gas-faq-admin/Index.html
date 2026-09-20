@@ -93,7 +93,7 @@
           <tbody id="driveRows"><tr><td colspan="5">読み込み待ちです。</td></tr></tbody>
         </table>
       </div>
-      <p class="help">現在の直接登録対象：Googleドキュメント／スプレッドシート／スライド／TXT／CSV／JSON／HTML／Markdown。PDF・Word・Excel・PowerPointはSTEP5-8後半で追加します。</p>
+      <p class="help">直接登録対象：Googleドキュメント／スプレッドシート／スライド／TXT／CSV／JSON／HTML／Markdown／Word／Excel／PowerPoint／PDF。Officeファイルは一時Google形式へ変換して抽出します。PDFは管理者確認後にDrive変換/OCRを使用します。</p>
     </section>
 
     <section class="card" id="registerCard">
@@ -118,6 +118,14 @@
           <label for="validUntil">有効終了日</label>
           <input id="validUntil" type="date">
         </div>
+      </div>
+
+      <div id="pdfOcrArea" style="display:none">
+        <label>
+          <input id="allowPdfOcr" type="checkbox">
+          PDFの本文抽出にGoogle Driveの変換/OCRを使用することを確認しました
+        </label>
+        <p class="small">元のPDFは変更しません。一時変換ファイルは抽出後に削除します。プレビュー内容を確認してから登録してください。</p>
       </div>
 
       <div class="actions">
@@ -274,8 +282,8 @@
       }
       tbody.innerHTML=files.map(f=>{
         const status=f.supported
-          ? '<span class="badge ok">対応</span>'
-          : '<span class="badge warn">後半で対応</span><div class="small">'+escapeHtml(f.note)+'</div>';
+          ? '<span class="badge ok">対応</span>'+(f.note?'<div class="small">'+escapeHtml(f.note)+'</div>':'')
+          : '<span class="badge warn">未対応</span><div class="small">'+escapeHtml(f.note)+'</div>';
         return '<tr>'+
           '<td><strong>'+escapeHtml(f.name)+'</strong><div class="small">'+escapeHtml(f.mimeType)+'</div></td>'+
           '<td>'+escapeHtml(f.kind)+'</td>'+
@@ -299,6 +307,9 @@
     document.getElementById('previewBtn').disabled=false;
     document.getElementById('registerBtn').disabled=false;
     document.getElementById('previewBox').style.display='none';
+    document.getElementById('allowPdfOcr').checked=false;
+    document.getElementById('pdfOcrArea').style.display=
+      f.mimeType==='application/pdf' ? 'block' : 'none';
     document.getElementById('unitArea').style.display='none';
     document.getElementById('progressBox').style.display='none';
   }
@@ -307,7 +318,11 @@
     if(!state.selectedFile)return;
     busy(true);
     try{
-      const r=await gs('previewDriveFileStep5',state.selectedFile.id);
+      const r=await gs(
+        'previewDriveFileStep5',
+        state.selectedFile.id,
+        { allowPdfOcr: document.getElementById('allowPdfOcr').checked }
+      );
       state.preview=r;
 
       const box=document.getElementById('previewBox');
@@ -356,6 +371,7 @@
       validFrom:document.getElementById('validFrom').value,
       validUntil:document.getElementById('validUntil').value,
       selectedUnits:hasUnitCheckbox?units:null,
+      allowPdfOcr:document.getElementById('allowPdfOcr').checked,
       approved:true
     };
 
