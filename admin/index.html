@@ -46,12 +46,19 @@
         </div>
       </header>
 
-      <section class="auth-notice">
-        <div>
-          <strong>管理操作は現在ロックしています</strong>
-          <p>この画面には秘密情報を置きません。Google管理者認証を設定後、資料登録・削除・Drive同期・RAG検索テストを有効化します。</p>
+      <section class="auth-notice" id="auth-notice">
+        <div class="auth-copy">
+          <strong id="auth-title">管理操作は現在ロックしています</strong>
+          <p id="auth-description">この画面には秘密情報を置きません。Google管理者認証を設定後、資料登録・削除・Drive同期・RAG検索テストを有効化します。</p>
         </div>
-        <span class="lock-badge">🔒 認証設定待ち</span>
+        <div class="auth-actions">
+          <div id="google-signin" hidden></div>
+          <div class="signed-user" id="signed-user" hidden>
+            <span id="signed-user-name"></span>
+            <button type="button" id="signout-button">ログアウト</button>
+          </div>
+          <span class="lock-badge" id="auth-badge">🔒 認証設定待ち</span>
+        </div>
       </section>
 
       <section class="admin-view is-active" data-view-panel="dashboard">
@@ -202,6 +209,7 @@
   </div>
 
   <div class="admin-toast" id="admin-toast" hidden></div>
-  <script src="admin.js?v=step5-7" defer></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="admin.js?v=step5-7a" defer></script>
 </body>
 </html>
