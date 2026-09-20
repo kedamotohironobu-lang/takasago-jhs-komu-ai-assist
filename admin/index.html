@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
+  <meta name="theme-color" content="#0d5b91">
+  <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
+  <link rel="stylesheet" href="admin.css?v=step5-7">
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="admin-sidebar">
+      <div class="admin-brand">
+        <div class="admin-brand-mark">⚙</div>
+        <div>
+          <div class="admin-school">高砂市立高砂中学校</div>
+          <div class="admin-brand-title">校務AIアシスト</div>
+        </div>
+      </div>
+
+      <nav class="admin-nav" aria-label="管理メニュー">
+        <button class="admin-nav-item is-active" type="button" data-admin-view="dashboard">📊 ダッシュボード</button>
+        <button class="admin-nav-item" type="button" data-admin-view="materials">📚 資料管理</button>
+        <button class="admin-nav-item" type="button" data-admin-view="add">➕ 資料を追加</button>
+        <button class="admin-nav-item" type="button" data-admin-view="drive">🔄 Drive同期</button>
+        <button class="admin-nav-item" type="button" data-admin-view="search">🔎 RAG検索テスト</button>
+        <button class="admin-nav-item" type="button" data-admin-view="usage">📈 利用状況</button>
+        <button class="admin-nav-item" type="button" data-admin-view="system">🩺 システム状態</button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <a class="home-link" href="../">← 校務AIアシストへ戻る</a>
+      </div>
+    </aside>
+
+    <main class="admin-main">
+      <header class="admin-topbar">
+        <div>
+          <p class="eyebrow">ADMINISTRATION</p>
+          <h1>校務AIアシスト ダッシュボード</h1>
+        </div>
+        <div class="topbar-status">
+          <span class="status-dot" id="overall-dot"></span>
+          <span id="overall-label">確認中</span>
+        </div>
+      </header>
+
+      <section class="auth-notice">
+        <div>
+          <strong>管理操作は現在ロックしています</strong>
+          <p>この画面には秘密情報を置きません。Google管理者認証を設定後、資料登録・削除・Drive同期・RAG検索テストを有効化します。</p>
+        </div>
+        <span class="lock-badge">🔒 認証設定待ち</span>
+      </section>
+
+      <section class="admin-view is-active" data-view-panel="dashboard">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">OVERVIEW</p>
+            <h2>ダッシュボード</h2>
+          </div>
+          <button class="refresh-button" type="button" data-refresh>↻ 更新</button>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card">
+            <span class="metric-label">有効資料</span>
+            <strong class="metric-value" id="metric-docs">—</strong>
+            <span class="metric-note">D1の現行・active資料</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">有効チャンク</span>
+            <strong class="metric-value" id="metric-chunks">—</strong>
+            <span class="metric-note">Vectorize検索対象</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Vectorize使用率</span>
+            <strong class="metric-value" id="metric-vector">—</strong>
+            <span class="metric-note" id="metric-vector-note">500万dimensions基準</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">同期ジョブ</span>
+            <strong class="metric-value" id="metric-jobs">—</strong>
+            <span class="metric-note">実行中 / 失敗</span>
+          </article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <h3>RAG基盤</h3>
+              <span class="panel-badge" id="rag-ready-badge">確認中</span>
+            </div>
+            <div class="status-list">
+              <div><span>D1</span><strong id="status-d1">確認中</strong></div>
+              <div><span>Vectorize</span><strong id="status-vector">確認中</strong></div>
+              <div><span>Evidence Gate</span><strong id="status-gate">確認中</strong></div>
+              <div><span>Embedding</span><strong id="status-embedding">確認中</strong></div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>容量監視</h3>
+              <span class="panel-badge">Free枠</span>
+            </div>
+            <div class="capacity-block">
+              <div class="capacity-row">
+                <div><span>Vectorize</span><strong id="vector-dims">—</strong></div>
+                <div class="capacity-track"><span id="vector-bar"></span></div>
+              </div>
+              <div class="capacity-row">
+                <div><span>D1 推定Working Set</span><strong id="d1-bytes">—</strong></div>
+                <div class="capacity-track"><span id="d1-bar"></span></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>現在のSTEP</h3>
+              <span class="panel-badge accent">STEP 5-7</span>
+            </div>
+            <div class="step-flow">
+              <div class="step-chip is-done">D1</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-done">Vectorize</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-done">Hybrid検索</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-done">Evidence Gate</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-current">管理者UI</div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="admin-view" data-view-panel="materials" hidden>
+        <div class="section-head"><div><p class="eyebrow">DOCUMENTS</p><h2>資料管理</h2></div></div>
+        <div class="locked-panel">
+          <div class="locked-icon">🔒</div>
+          <h3>管理者認証設定後に有効化します</h3>
+          <p>資料名、版、承認状態、有効期間、チャンク数、同期状態を一覧管理する画面です。</p>
+        </div>
+      </section>
+
+      <section class="admin-view" data-view-panel="add" hidden>
+        <div class="section-head"><div><p class="eyebrow">REGISTER</p><h2>資料を追加</h2></div></div>
+        <div class="locked-panel">
+          <div class="locked-icon">➕</div>
+          <h3>Drive / ファイル登録画面</h3>
+          <p>PDF・Word・Excel・PowerPoint・Googleファイルを登録し、ページやシートを選択して承認する画面を次段階で接続します。</p>
+        </div>
+      </section>
+
+      <section class="admin-view" data-view-panel="drive" hidden>
+        <div class="section-head"><div><p class="eyebrow">SYNC</p><h2>Drive同期</h2></div></div>
+        <div class="locked-panel">
+          <div class="locked-icon">🔄</div>
+          <h3>Google Drive同期</h3>
+          <p>原本の更新日時・SHA-256を確認し、変更資料だけ再処理する同期画面です。</p>
+        </div>
+      </section>
+
+      <section class="admin-view" data-view-panel="search" hidden>
+        <div class="section-head"><div><p class="eyebrow">RAG TEST</p><h2>RAG検索テスト</h2></div></div>
+        <div class="locked-panel">
+          <div class="locked-icon">🔎</div>
+          <h3>検索診断</h3>
+          <p>Vector順位、FTS順位、RRF順位、Evidence Gate判定、除外理由を管理者だけが確認できる画面です。</p>
+        </div>
+      </section>
+
+      <section class="admin-view" data-view-panel="usage" hidden>
+        <div class="section-head"><div><p class="eyebrow">CAPACITY</p><h2>利用状況</h2></div><button class="refresh-button" type="button" data-refresh>↻ 更新</button></div>
+        <div class="dashboard-grid">
+          <article class="panel wide">
+            <h3>RAG容量</h3>
+            <div class="status-list">
+              <div><span>有効資料</span><strong id="usage-docs">—</strong></div>
+              <div><span>有効チャンク</span><strong id="usage-chunks">—</strong></div>
+              <div><span>Vector dimensions</span><strong id="usage-vector">—</strong></div>
+              <div><span>D1推定Working Set</span><strong id="usage-d1">—</strong></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="admin-view" data-view-panel="system" hidden>
+        <div class="section-head"><div><p class="eyebrow">HEALTH</p><h2>システム状態</h2></div><button class="refresh-button" type="button" data-refresh>↻ 更新</button></div>
+        <div class="system-grid" id="system-grid">
+          <article class="system-card"><span>Worker</span><strong id="health-worker">確認中</strong></article>
+          <article class="system-card"><span>D1</span><strong id="health-d1">確認中</strong></article>
+          <article class="system-card"><span>Vectorize</span><strong id="health-vector">確認中</strong></article>
+          <article class="system-card"><span>Evidence Gate</span><strong id="health-gate">確認中</strong></article>
+        </div>
+        <p class="last-updated">最終確認: <span id="last-updated">—</span></p>
+      </section>
+    </main>
+  </div>
+
+  <div class="admin-toast" id="admin-toast" hidden></div>
+  <script src="admin.js?v=step5-7" defer></script>
+</body>
+</html>
