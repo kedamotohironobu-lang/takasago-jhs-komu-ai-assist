@@ -1129,7 +1129,21 @@ function registerDriveFileStep5(options) {
       if (current && current.status === 'active' && current.sourceModifiedAt) {
         const registeredMs = new Date(current.sourceModifiedAt).getTime();
         const driveMs = file.getLastUpdated().getTime();
-        if (registeredMs && driveMs <= registeredMs + 1000) {
+
+        const desiredTitle = clean_(payload.title, 300) || file.getName();
+        const desiredCategory = clean_(payload.categoryId, 120) || 'cat-other';
+        const desiredOwner = clean_(payload.ownerDepartment || payload.owner, 160);
+        const desiredValidFrom = clean_(payload.validFrom, 60);
+        const desiredValidUntil = clean_(payload.validUntil, 60);
+
+        const sameMetadata =
+          String(current.title || '') === String(desiredTitle || '') &&
+          String(current.categoryId || '') === String(desiredCategory || '') &&
+          String(current.ownerDepartment || '') === String(desiredOwner || '') &&
+          String(current.validFrom || '') === String(desiredValidFrom || '') &&
+          String(current.validUntil || '') === String(desiredValidUntil || '');
+
+        if (registeredMs && driveMs <= registeredMs + 1000 && sameMetadata) {
           return {
             ok: true,
             skipped: true,
@@ -1138,7 +1152,7 @@ function registerDriveFileStep5(options) {
             sourceId: current.sourceId,
             documentId: current.documentId,
             revisionNo: Number(current.revisionNo || 1),
-            message: 'Drive原本に更新がないため、再Embeddingを行いませんでした。'
+            message: 'Drive原本と登録メタデータに更新がないため、再Embeddingを行いませんでした。'
           };
         }
       }
