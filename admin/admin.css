@@ -127,3 +127,45 @@ button{cursor:pointer}
 .signed-user button{border:0;border-radius:999px;padding:6px 9px;background:#dcefe4;color:#235a42;font-weight:850}
 .lock-badge.is-authenticated{background:#dff2e8;color:#176b49}
 #google-signin{min-height:40px}
+
+.auth-required-panel{
+  text-align:center;padding:42px 24px;
+  background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)
+}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:var(--shadow)}
+.admin-table{width:100%;border-collapse:collapse;min-width:860px}
+.admin-table th,.admin-table td{padding:13px 14px;border-bottom:1px solid #edf2f5;text-align:left;vertical-align:top}
+.admin-table th{background:#f6f9fb;color:#587187;font-size:12px;font-weight:900;position:sticky;top:0}
+.admin-table td{font-size:13px}
+.admin-table td strong{display:block;color:#244d6c}
+.admin-table td small{display:block;margin-top:3px;color:#8aa0b0;word-break:break-all}
+.status-pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef3f6;color:#60798d;font-size:11px;font-weight:900}
+.status-pill.ok{background:#e7f6ef;color:#17724f}
+.empty-message{color:#7a91a2;font-weight:750}
+.search-test{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:18px}
+.search-label{display:block;margin-bottom:8px;color:#365b77;font-weight:900}
+.search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+.search-row input{width:100%;border:1px solid #cfdde7;border-radius:13px;padding:12px 14px;color:var(--ink);font:inherit}
+.search-row input:focus{outline:3px solid rgba(36,116,174,.14);border-color:#6fa9d4}
+.search-row button{border:0;border-radius:13px;padding:0 20px;background:#17699f;color:#fff;font-weight:900;box-shadow:0 8px 18px rgba(23,105,159,.20)}
+.search-row button:disabled{opacity:.65;cursor:wait}
+.search-result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}
+.search-result-grid .wide{grid-column:1/-1}
+.candidate-list,.evidence-list{display:grid;gap:10px}
+.candidate-card{padding:12px 13px;border:1px solid #e0e8ee;border-radius:13px;background:#fafcfd}
+.candidate-card.is-accepted{border-color:#b9dfcd;background:#f1faf5}
+.candidate-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.candidate-top strong{font-size:13px}
+.candidate-top span{padding:3px 7px;border-radius:999px;background:#edf2f5;color:#6b8192;font-size:10px;font-weight:900}
+.candidate-card.is-accepted .candidate-top span{background:#dff2e8;color:#176b49}
+.candidate-meta{margin-top:6px;color:#5f788b;font-size:12px;font-weight:750}
+.candidate-reason{margin-top:4px;color:#8a9dab;font-size:11px}
+.evidence-card{padding:14px;border:1px solid #dfe9ef;border-radius:14px;background:#fbfdfe}
+.evidence-card strong{display:block;color:#244f70}
+.evidence-card span{display:block;margin-top:3px;color:#6d8496;font-size:12px}
+.evidence-card p{margin:9px 0 0;white-space:pre-wrap;color:#344f64;font-size:13px;line-height:1.75}
+@media(max-width:700px){
+  .search-row,.search-result-grid{grid-template-columns:1fr}
+  .search-result-grid .wide{grid-column:auto}
+  .search-row button{min-height:46px}
+}
