@@ -841,6 +841,93 @@ async function listRagDocumentsForAdmin(env) {
   };
 }
 
+async function productionReadinessStatus(env) {
+  const ragDb = await ragDbStatus(env);
+  const ragVector = ragVectorStatus(env);
+  const clientId = String(env?.GOOGLE_OAUTH_CLIENT_ID || '').trim();
+  const adminEmails = parseCsvEnvList(env?.ADMIN_EMAILS);
+  const staffEmails = parseCsvEnvList(env?.STAFF_EMAILS);
+  const staffDomains = parseCsvEnvList(env?.STAFF_DOMAINS);
+  const providerCount = [
+    String(env?.CEREBRAS_API_KEY || '').trim(),
+    String(env?.GROQ_API_KEY || '').trim(),
+    String(env?.GEMINI_API_KEY || '').trim()
+  ].filter(Boolean).length;
+
+  let activeDocuments = 0;
+  let activeChunks = 0;
+  if (env?.RAG_DB && typeof env.RAG_DB.prepare === 'function') {
+    try {
+      const row = await env.RAG_DB.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM documents WHERE is_current=1 AND status='active' AND approval_status='approved') AS documents,
+          (SELECT COUNT(*) FROM chunks WHERE is_active=1 AND embedding_status='ready') AS chunks
+      `).first();
+      activeDocuments = Number(row?.documents || 0);
+      activeChunks = Number(row?.chunks || 0);
+    } catch {}
+  }
+
+  const checks = {
+    ragDatabase: Boolean(ragDb?.configured && ragDb?.schemaReady),
+    vectorize: Boolean(ragVector?.configured),
+    evidenceGate: true,
+    aiProvider: providerCount > 0,
+    adminAuth: Boolean(clientId && adminEmails.length),
+    staffAuthPilot: Boolean(clientId && adminEmails.length),
+    staffAuthSchoolwide: Boolean(clientId && (staffEmails.length || staffDomains.length)),
+    approvedDocuments: activeDocuments > 0,
+    activeChunks: activeChunks > 0,
+    legacyKvPublicRetired: true
+  };
+
+  const pilotReady =
+    checks.ragDatabase &&
+    checks.vectorize &&
+    checks.evidenceGate &&
+    checks.aiProvider &&
+    checks.adminAuth &&
+    checks.staffAuthPilot &&
+    checks.approvedDocuments &&
+    checks.activeChunks &&
+    checks.legacyKvPublicRetired;
+
+  const schoolwideReady =
+    pilotReady &&
+    checks.staffAuthSchoolwide;
+
+  const warnings = [];
+  if (!checks.staffAuthSchoolwide) {
+    warnings.push('一般職員向けのSTAFF_EMAILSまたはSTAFF_DOMAINSが未設定です。');
+  }
+  if (!checks.approvedDocuments) {
+    warnings.push('承認済みの有効資料がありません。');
+  }
+  if (!checks.activeChunks) {
+    warnings.push('検索対象の有効チャンクがありません。');
+  }
+  if (!checks.aiProvider) {
+    warnings.push('回答生成用AIプロバイダーが設定されていません。');
+  }
+
+  return {
+    mode:'rag-v2',
+    workerVersion:'5.10.0',
+    pilotReady,
+    schoolwideReady,
+    checks,
+    counts:{
+      activeDocuments,
+      activeChunks,
+      adminEmails:adminEmails.length,
+      staffEmails:staffEmails.length,
+      staffDomains:staffDomains.length,
+      aiProviders:providerCount
+    },
+    warnings
+  };
+}
+
 async function ragDashboardStatus(env) {
   if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
     return {
@@ -999,6 +1086,11 @@ export default {
         }
       },200,origin || '*');
     }
+    if (request.method === 'GET' && url.pathname === '/health/production-readiness') {
+      const status = await productionReadinessStatus(env);
+      return json({ok:true,readiness:status},200,origin || '*');
+    }
+
 
 
     if (request.method === 'GET' && url.pathname === '/admin/auth/me') {
