@@ -8,6 +8,8 @@ import {
   getRagDocumentStatus,
   indexNextRagDocument,
   finalizeRagDocument,
+  getRagSourceState,
+  markRagSourceMissing,
   cleanupRagTestDocument,
   cleanupRagTestSource
 } from './rag-store.mjs';
@@ -770,6 +772,7 @@ async function listRagDocumentsForAdmin(env) {
       d.revision_no,
       d.is_current,
       d.source_type,
+      d.drive_file_id,
       d.file_name,
       d.title,
       d.mime_type,
@@ -811,6 +814,7 @@ async function listRagDocumentsForAdmin(env) {
       revisionNo:Number(row.revision_no || 1),
       isCurrent:Number(row.is_current || 0) === 1,
       sourceType:String(row.source_type || ''),
+      driveFileId:String(row.drive_file_id || ''),
       fileName:String(row.file_name || ''),
       title:String(row.title || ''),
       mimeType:String(row.mime_type || ''),
@@ -838,6 +842,39 @@ async function listRagDocumentsForAdmin(env) {
       updatedAt:String(row.updated_at || ''),
       deletedAt:String(row.deleted_at || '')
     }))
+  };
+}
+
+async function listRagAuditForAdmin(env, limit = 100) {
+  if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
+    throw Object.assign(new Error('RAG_DB が設定されていません。'), { code:'RAG_DB_NOT_CONFIGURED', status:503 });
+  }
+
+  const safeLimit = Math.max(1, Math.min(200, Number(limit) || 100));
+  const rows = await env.RAG_DB.prepare(`
+    SELECT
+      log_id,occurred_at,actor_id,action,entity_type,entity_id,summary,metadata_json,request_id
+    FROM audit_logs
+    ORDER BY occurred_at DESC
+    LIMIT ${safeLimit}
+  `).all();
+
+  return {
+    logs:(rows?.results || []).map(row => {
+      let metadata = {};
+      try { metadata = row.metadata_json ? JSON.parse(row.metadata_json) : {}; } catch {}
+      return {
+        logId:String(row.log_id || ''),
+        occurredAt:String(row.occurred_at || ''),
+        actorId:String(row.actor_id || ''),
+        action:String(row.action || ''),
+        entityType:String(row.entity_type || ''),
+        entityId:String(row.entity_id || ''),
+        summary:String(row.summary || ''),
+        metadata,
+        requestId:String(row.request_id || '')
+      };
+    })
   };
 }
 
@@ -1020,7 +1057,7 @@ export default {
     const origin = pickCorsOrigin(request, env);
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
     if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token,Authorization','Access-Control-Max-Age':'86400','Vary':'Origin'}});
-    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.10.0'},200,origin || '*');
+    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.11.0'},200,origin || '*');
     if (request.method === 'GET' && url.pathname === '/health/providers') {
       return json({
         ok:true,
@@ -1268,6 +1305,50 @@ export default {
         return json({ok:true,result},200,origin || '*');
       } catch (e) {
         return json({ok:false,error:{code:e?.code || 'RAG_DOCUMENT_LIST_FAILED',message:String(e?.message || '資料一覧を取得できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/rag/source-status') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      const sourceId = String(url.searchParams.get('sourceId') || '');
+      if (!sourceId) return json({ok:false,error:{code:'SOURCE_ID_REQUIRED',message:'sourceId が必要です。'}},400,origin || '*');
+      try {
+        const result = await getRagSourceState(env, sourceId);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_SOURCE_STATUS_FAILED',message:String(e?.message || '資料同期状態を取得できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/source-missing') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      const body = await readJsonBody(request);
+      const sourceId = String(body?.sourceId || '');
+      if (!sourceId) return json({ok:false,error:{code:'SOURCE_ID_REQUIRED',message:'sourceId が必要です。'}},400,origin || '*');
+      try {
+        const result = await markRagSourceMissing(env, sourceId, auth.email || 'faq-admin');
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_SOURCE_MISSING_FAILED',message:String(e?.message || '原本未確認状態への変更に失敗しました。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/rag/audit') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      try {
+        const result = await listRagAuditForAdmin(env, url.searchParams.get('limit') || 100);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_AUDIT_LIST_FAILED',message:String(e?.message || '監査ログを取得できませんでした。')}},e?.status || 500,origin || '*');
       }
     }
 
