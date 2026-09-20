@@ -9,7 +9,8 @@ import {
   getRagDocumentStatus,
   indexNextRagDocument,
   finalizeRagDocument,
-  cleanupRagTestDocument
+  cleanupRagTestDocument,
+  cleanupRagTestSource
 } from './rag-store.mjs';
 
 const COMMON_SYSTEM_PROMPT = `あなたは中学校教職員の校務を支援する文章作成アシスタントです。日本語で、明確で丁寧な、すぐに編集して使える案を作ります。
@@ -804,7 +805,7 @@ export default {
     const origin = pickCorsOrigin(request, env);
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
     if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token,Authorization','Access-Control-Max-Age':'86400','Vary':'Origin'}});
-    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.6.0'},200,origin || '*');
+    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.7.0'},200,origin || '*');
     if (request.method === 'GET' && url.pathname === '/health/providers') {
       return json({
         ok:true,
@@ -952,6 +953,19 @@ export default {
           error:{code:e?.code || 'RAG_FINALIZE_FAILED',message:String(e?.message || 'RAG finalize failed')},
           detail:e?.missingSamples ? {missingSamples:e.missingSamples} : undefined
         },e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/rag/test-source-cleanup') {
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      const body = await readJsonBody(request);
+      const sourceId = String(body?.sourceId || '');
+      if (!sourceId) return json({ok:false,error:{code:'SOURCE_ID_REQUIRED',message:'sourceId が必要です。'}},400,origin || '*');
+      try {
+        const result = await cleanupRagTestSource(env, sourceId, 'faq-admin');
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_TEST_SOURCE_CLEANUP_FAILED',message:String(e?.message || 'RAG test source cleanup failed')}},e?.status || 500,origin || '*');
       }
     }
 
