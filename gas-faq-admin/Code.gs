@@ -1185,7 +1185,23 @@ function registerDriveFileStep5(options) {
   };
 
   const staged = workerRequest_('/admin/rag/stage', 'post', stagePayload, true);
-  const documentId = staged && staged.result && staged.result.documentId;
+  const stagedResult = staged && staged.result ? staged.result : {};
+
+  if (stagedResult.skipped === true) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: stagedResult.reason || 'content_unchanged',
+      fileId: fileId,
+      sourceId: stagePayload.sourceId,
+      documentId: stagedResult.documentId || '',
+      revisionNo: Number(stagedResult.revisionNo || 1),
+      message: stagedResult.message || '本文内容に変更がないため再Embeddingを省略しました。',
+      stage: staged
+    };
+  }
+
+  const documentId = stagedResult.documentId;
   if (!documentId) throw new Error('D1ステージング後のdocumentIdを取得できませんでした。');
 
   PropertiesService.getScriptProperties()
