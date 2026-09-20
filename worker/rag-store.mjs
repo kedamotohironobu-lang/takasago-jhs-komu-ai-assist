@@ -798,6 +798,13 @@ async function softDeleteRagDocument(env, documentId, actorId = 'faq-admin') {
   if (doc.deleted_at) {
     return { ok:true, changed:false, reason:'ALREADY_DELETED', documentId };
   }
+  if (String(doc.status || '') !== 'active') {
+    throw fail(
+      'DELETE_ACTIVE_ONLY',
+      '検索中のactive資料だけを論理削除できます。期限切れ・原本未確認・処理中の資料はそれぞれの状態管理を使用してください。',
+      409
+    );
+  }
 
   const rows = await db.prepare(
     "SELECT vector_id FROM chunks WHERE document_id=? AND vector_id IS NOT NULL"
