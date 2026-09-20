@@ -99,10 +99,166 @@ function faqNoHitText(hasSources) {
     : '回答\n校内FAQの根拠資料がまだ登録されていません。\n\n根拠資料\n該当なし\n\n確認事項\n承認済みの校内資料を登録してください。';
 }
 
-function isFaqAdmin(request, env) {
-  const configured = String(env?.FAQ_ADMIN_TOKEN || '');
-  const supplied = String(request.headers.get('X-FAQ-Admin-Token') || '');
-  return Boolean(configured) && supplied === configured;
+let googleJwksCache = { expiresAt:0, keys:[] };
+
+function decodeBase64UrlJson(value) {
+  const raw = String(value || '').replace(/-/g,'+').replace(/_/g,'/');
+  const padded = raw + '='.repeat((4 - raw.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function decodeBase64UrlBytes(value) {
+  const raw = String(value || '').replace(/-/g,'+').replace(/_/g,'/');
+  const padded = raw + '='.repeat((4 - raw.length % 4) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, ch => ch.charCodeAt(0));
+}
+
+async function getGoogleJwks() {
+  const now = Date.now();
+  if (googleJwksCache.keys.length && googleJwksCache.expiresAt > now + 60000) {
+    return googleJwksCache.keys;
+  }
+
+  const res = await fetch('https://www.googleapis.com/oauth2/v3/certs', {
+    headers:{'Accept':'application/json'}
+  });
+  if (!res.ok) throw Object.assign(new Error('Google JWKS fetch failed'), { code:'GOOGLE_JWKS_FAILED', status:503 });
+
+  const data = await res.json();
+  const keys = Array.isArray(data?.keys) ? data.keys : [];
+  if (!keys.length) throw Object.assign(new Error('Google JWKS empty'), { code:'GOOGLE_JWKS_EMPTY', status:503 });
+
+  const cacheControl = String(res.headers.get('Cache-Control') || '');
+  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/i);
+  const maxAgeSeconds = maxAgeMatch ? Number(maxAgeMatch[1]) : 1800;
+  googleJwksCache = {
+    keys,
+    expiresAt:now + Math.max(300, maxAgeSeconds) * 1000
+  };
+  return keys;
+}
+
+async function verifyGoogleAdminIdToken(token, env) {
+  const clientId = String(env?.GOOGLE_OAUTH_CLIENT_ID || '').trim();
+  if (!clientId) {
+    throw Object.assign(new Error('Google管理者認証が未設定です。'), { code:'GOOGLE_ADMIN_AUTH_NOT_CONFIGURED', status:503 });
+  }
+
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) throw Object.assign(new Error('ID token format invalid'), { code:'GOOGLE_ID_TOKEN_INVALID', status:401 });
+
+  const header = decodeBase64UrlJson(parts[0]);
+  const payload = decodeBase64UrlJson(parts[1]);
+  if (header?.alg !== 'RS256' || !header?.kid) {
+    throw Object.assign(new Error('ID token header invalid'), { code:'GOOGLE_ID_TOKEN_INVALID', status:401 });
+  }
+
+  const keys = await getGoogleJwks();
+  const jwk = keys.find(k => String(k?.kid || '') === String(header.kid));
+  if (!jwk) {
+    googleJwksCache = { expiresAt:0, keys:[] };
+    const refreshed = await getGoogleJwks();
+    const retryJwk = refreshed.find(k => String(k?.kid || '') === String(header.kid));
+    if (!retryJwk) throw Object.assign(new Error('Google signing key not found'), { code:'GOOGLE_ID_TOKEN_KEY_NOT_FOUND', status:401 });
+    return verifyGoogleAdminIdToken(token, { ...env, __forcedJwk:retryJwk });
+  }
+
+  const selectedJwk = env?.__forcedJwk || jwk;
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    selectedJwk,
+    { name:'RSASSA-PKCS1-v1_5', hash:'SHA-256' },
+    false,
+    ['verify']
+  );
+
+  const data = new TextEncoder().encode(parts[0] + '.' + parts[1]);
+  const signature = decodeBase64UrlBytes(parts[2]);
+  const validSignature = await crypto.subtle.verify(
+    { name:'RSASSA-PKCS1-v1_5' },
+    key,
+    signature,
+    data
+  );
+  if (!validSignature) throw Object.assign(new Error('ID token signature invalid'), { code:'GOOGLE_ID_TOKEN_INVALID', status:401 });
+
+  const now = Math.floor(Date.now()/1000);
+  const issuer = String(payload?.iss || '');
+  const audience = String(payload?.aud || '');
+  const exp = Number(payload?.exp || 0);
+  const nbf = Number(payload?.nbf || 0);
+
+  if (!['accounts.google.com','https://accounts.google.com'].includes(issuer)) {
+    throw Object.assign(new Error('ID token issuer invalid'), { code:'GOOGLE_ID_TOKEN_INVALID', status:401 });
+  }
+  if (audience !== clientId) {
+    throw Object.assign(new Error('ID token audience invalid'), { code:'GOOGLE_ID_TOKEN_INVALID', status:401 });
+  }
+  if (!exp || exp <= now - 30) {
+    throw Object.assign(new Error('ID token expired'), { code:'GOOGLE_ID_TOKEN_EXPIRED', status:401 });
+  }
+  if (nbf && nbf > now + 60) {
+    throw Object.assign(new Error('ID token not active'), { code:'GOOGLE_ID_TOKEN_INVALID', status:401 });
+  }
+
+  const email = String(payload?.email || '').trim().toLowerCase();
+  const emailVerified = payload?.email_verified === true || String(payload?.email_verified || '').toLowerCase() === 'true';
+  const authoritativeEmail = email.endsWith('@gmail.com') || Boolean(String(payload?.hd || '').trim());
+  if (!email || !emailVerified || !authoritativeEmail) {
+    throw Object.assign(new Error('Googleアカウントのメール確認に失敗しました。'), { code:'GOOGLE_EMAIL_NOT_AUTHORITATIVE', status:403 });
+  }
+
+  const allowedEmails = String(env?.ADMIN_EMAILS || '')
+    .split(',')
+    .map(v => v.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!allowedEmails.length) {
+    throw Object.assign(new Error('管理者メール許可リストが未設定です。'), { code:'ADMIN_EMAILS_NOT_CONFIGURED', status:503 });
+  }
+  if (!allowedEmails.includes(email)) {
+    throw Object.assign(new Error('このGoogleアカウントには管理権限がありません。'), { code:'ADMIN_EMAIL_NOT_ALLOWED', status:403 });
+  }
+
+  return {
+    method:'google',
+    sub:String(payload?.sub || ''),
+    email,
+    name:String(payload?.name || ''),
+    hd:String(payload?.hd || '')
+  };
+}
+
+async function authenticateAdmin(request, env) {
+  const configuredLegacy = String(env?.FAQ_ADMIN_TOKEN || '');
+  const suppliedLegacy = String(request.headers.get('X-FAQ-Admin-Token') || '');
+  if (configuredLegacy && suppliedLegacy && suppliedLegacy === configuredLegacy) {
+    return { ok:true, method:'legacy-token', email:'', name:'' };
+  }
+
+  const auth = String(request.headers.get('Authorization') || '');
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  if (!match) return { ok:false, code:'ADMIN_AUTH_REQUIRED', status:401 };
+
+  try {
+    const identity = await verifyGoogleAdminIdToken(match[1], env);
+    return { ok:true, ...identity };
+  } catch (e) {
+    return {
+      ok:false,
+      code:e?.code || 'ADMIN_AUTH_FAILED',
+      status:e?.status || 401,
+      message:String(e?.message || '管理者認証に失敗しました。')
+    };
+  }
+}
+
+async function isFaqAdmin(request, env) {
+  const result = await authenticateAdmin(request, env);
+  return Boolean(result?.ok);
 }
 
 async function readJsonBody(request) {
@@ -543,7 +699,7 @@ export default {
     const url = new URL(request.url);
     const origin = pickCorsOrigin(request, env);
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
-    if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token','Access-Control-Max-Age':'86400','Vary':'Origin'}});
+    if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token,Authorization','Access-Control-Max-Age':'86400','Vary':'Origin'}});
     if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.4.0'},200,origin || '*');
     if (request.method === 'GET' && url.pathname === '/health/providers') {
       return json({
@@ -587,9 +743,39 @@ export default {
       const status = await ragDashboardStatus(env);
       return json({ok:true,ragDashboard:status},200,origin || '*');
     }
+    if (request.method === 'GET' && url.pathname === '/health/admin-auth') {
+      const clientId = String(env?.GOOGLE_OAUTH_CLIENT_ID || '').trim();
+      const allowedCount = String(env?.ADMIN_EMAILS || '').split(',').map(v=>v.trim()).filter(Boolean).length;
+      return json({
+        ok:true,
+        adminAuth:{
+          provider:'google',
+          configured:Boolean(clientId && allowedCount),
+          googleClientId:clientId,
+          allowedAdminCount:allowedCount,
+          legacyGasTokenConfigured:Boolean(String(env?.FAQ_ADMIN_TOKEN || '').trim())
+        }
+      },200,origin || '*');
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/auth/me') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      return json({
+        ok:true,
+        admin:{
+          authenticated:true,
+          method:auth.method,
+          email:auth.email || '',
+          name:auth.name || ''
+        }
+      },200,origin || '*');
+    }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/schema-ensure') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       try {
         const result = await ensureRagSchemaExtras(env);
         return json({ok:true,result},200,origin || '*');
@@ -599,7 +785,7 @@ export default {
     }
 
     if (request.method === 'GET' && url.pathname === '/admin/rag/capacity') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       try {
         const result = await getRagCapacity(env);
         return json({ok:true,result},200,origin || '*');
@@ -609,7 +795,7 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/stage') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const body = await readJsonBody(request);
       try {
         const result = await stageRagDocument(env, body, 'faq-admin');
@@ -624,7 +810,7 @@ export default {
     }
 
     if (request.method === 'GET' && url.pathname === '/admin/rag/document-status') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const documentId = String(url.searchParams.get('documentId') || '');
       if (!documentId) return json({ok:false,error:{code:'DOCUMENT_ID_REQUIRED',message:'documentId が必要です。'}},400,origin || '*');
       try {
@@ -636,7 +822,7 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/index-next') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const body = await readJsonBody(request);
       const documentId = String(body?.documentId || '');
       if (!documentId) return json({ok:false,error:{code:'DOCUMENT_ID_REQUIRED',message:'documentId が必要です。'}},400,origin || '*');
@@ -649,7 +835,7 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/finalize') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const body = await readJsonBody(request);
       const documentId = String(body?.documentId || '');
       if (!documentId) return json({ok:false,error:{code:'DOCUMENT_ID_REQUIRED',message:'documentId が必要です。'}},400,origin || '*');
@@ -666,7 +852,7 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/test-cleanup') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const body = await readJsonBody(request);
       const documentId = String(body?.documentId || '');
       if (!documentId) return json({ok:false,error:{code:'DOCUMENT_ID_REQUIRED',message:'documentId が必要です。'}},400,origin || '*');
@@ -679,7 +865,7 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/answer-test') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const body = await readJsonBody(request);
       const query = String(body?.query || '').trim();
       if (!query) return json({ok:false,error:{code:'QUERY_REQUIRED',message:'質問を入力してください。'}},400,origin || '*');
@@ -692,7 +878,7 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/retrieval-test') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const body = await readJsonBody(request);
       const query = String(body?.query || '').trim();
       if (!query) return json({ok:false,error:{code:'QUERY_REQUIRED',message:'質問を入力してください。'}},400,origin || '*');
@@ -707,7 +893,7 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/rag/vector-test') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const body = await readJsonBody(request);
       const action = String(body?.action || 'upsert');
       try {
@@ -719,14 +905,14 @@ export default {
     }
 
     if (request.method === 'GET' && url.pathname === '/admin/faq/sources') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const result = await listFaqSources(env);
       if (!result.configured) return json({ok:false,error:{code:'FAQ_KV_NOT_CONFIGURED',message:'FAQ_KV が設定されていません。'}},503,origin || '*');
       return json({ok:true,result},200,origin || '*');
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/faq/source') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const body = await readJsonBody(request);
       if (!body) return json({ok:false,error:{code:'INVALID_JSON',message:'リクエスト形式が正しくありません。'}},400,origin || '*');
       const result = await upsertFaqSource(env, body);
@@ -735,7 +921,7 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/admin/faq/remove') {
-      if (!isFaqAdmin(request, env)) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
+      if (!(await isFaqAdmin(request, env))) return json({ok:false,error:{code:'FAQ_ADMIN_UNAUTHORIZED',message:'FAQ管理権限を確認できません。'}},401,origin || '*');
       const body = await readJsonBody(request);
       if (!body?.sourceId) return json({ok:false,error:{code:'SOURCE_ID_REQUIRED',message:'sourceId が必要です。'}},400,origin || '*');
       const result = await removeFaqSource(env, body.sourceId);
