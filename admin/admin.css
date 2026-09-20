@@ -497,3 +497,11 @@ button{cursor:pointer}
   .acceptance-check{grid-template-columns:auto minmax(0,1fr)}
   .acceptance-check>b{grid-column:2}
 }
+
+
+/* STEP6-1: authenticated acceptance view visibility */
+.acceptance-auth-required-fix-marker{display:none}
+#acceptance-auth-required[hidden],
+#acceptance-content[hidden]{
+  display:none!important;
+}
