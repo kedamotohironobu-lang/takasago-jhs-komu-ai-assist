@@ -1507,6 +1507,7 @@ export default {
       }
 
       try {
+        await ensureOperationalSchema(env);
         const result = await runRagMaintenance(env, actorId);
         return json({ok:true,result},200,origin || '*');
       } catch (e) {
