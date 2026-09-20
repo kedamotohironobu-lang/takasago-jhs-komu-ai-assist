@@ -100,6 +100,7 @@ function getDriveFiles() {
       note: support.note,
       requiresOcrConfirmation: Boolean(support.requiresOcrConfirmation),
       updatedAt: formatDateTime_(file.getLastUpdated()),
+      updatedAtIso: file.getLastUpdated().toISOString(),
       size: Number(file.getSize() || 0),
       url: file.getUrl()
     });
@@ -910,6 +911,170 @@ function getRagDocumentStatusStep5(documentId) {
   );
 }
 
+function scanDriveSyncStep5() {
+  const folder = getFaqFolder_();
+  const files = folder.getFiles();
+  const driveFiles = [];
+
+  while (files.hasNext() && driveFiles.length < 500) {
+    const file = files.next();
+    const support = supportInfo_(file.getMimeType());
+    driveFiles.push({
+      fileId: file.getId(),
+      sourceId: makeSourceId_(file.getId()),
+      name: file.getName(),
+      mimeType: file.getMimeType(),
+      kind: support.label,
+      supported: Boolean(support.supported),
+      note: support.note || '',
+      updatedAt: formatDateTime_(file.getLastUpdated()),
+      updatedAtIso: file.getLastUpdated().toISOString(),
+      updatedAtMs: file.getLastUpdated().getTime(),
+      size: Number(file.getSize() || 0)
+    });
+  }
+
+  const documents = listRagDocumentsStep5();
+  const currentDriveDocs = documents.filter(function (doc) {
+    return doc && doc.isCurrent === true && doc.sourceType === 'drive';
+  });
+
+  const byDriveFileId = {};
+  const bySourceId = {};
+  currentDriveDocs.forEach(function (doc) {
+    if (doc.driveFileId) byDriveFileId[doc.driveFileId] = doc;
+    if (doc.sourceId) bySourceId[doc.sourceId] = doc;
+  });
+
+  const seenDriveIds = {};
+  const items = driveFiles.map(function (file) {
+    seenDriveIds[file.fileId] = true;
+    const doc = byDriveFileId[file.fileId] || bySourceId[file.sourceId] || null;
+
+    let syncStatus = 'new';
+    let reason = 'D1に現行版がありません。';
+
+    if (doc) {
+      const registeredMs = doc.sourceModifiedAt
+        ? new Date(doc.sourceModifiedAt).getTime()
+        : 0;
+
+      if (doc.status === 'source_missing') {
+        syncStatus = 'changed';
+        reason = 'Drive原本が再確認できました。再登録が必要です。';
+      } else if (!registeredMs || file.updatedAtMs > registeredMs + 1000) {
+        syncStatus = 'changed';
+        reason = 'Drive原本がD1現行版より新しく更新されています。';
+      } else {
+        syncStatus = 'unchanged';
+        reason = '更新はありません。';
+      }
+    }
+
+    return {
+      fileId: file.fileId,
+      sourceId: file.sourceId,
+      name: file.name,
+      kind: file.kind,
+      supported: file.supported,
+      note: file.note,
+      updatedAt: file.updatedAt,
+      updatedAtIso: file.updatedAtIso,
+      size: file.size,
+      syncStatus: syncStatus,
+      reason: reason,
+      currentDocumentId: doc ? doc.documentId : '',
+      currentRevisionNo: doc ? Number(doc.revisionNo || 0) : 0,
+      currentVersionLabel: doc ? doc.versionLabel || '' : '',
+      currentStatus: doc ? doc.status || '' : '',
+      categoryId: doc ? doc.categoryId || 'cat-other' : 'cat-other',
+      ownerDepartment: doc ? doc.ownerDepartment || '' : '',
+      validFrom: doc ? doc.validFrom || '' : '',
+      validUntil: doc ? doc.validUntil || '' : ''
+    };
+  });
+
+  const missing = currentDriveDocs
+    .filter(function (doc) {
+      return doc.driveFileId &&
+        !seenDriveIds[doc.driveFileId] &&
+        doc.status !== 'source_missing';
+    })
+    .map(function (doc) {
+      return {
+        sourceId: doc.sourceId,
+        driveFileId: doc.driveFileId,
+        title: doc.title || doc.fileName || '',
+        revisionNo: Number(doc.revisionNo || 0),
+        status: doc.status || '',
+        lastSyncedAt: doc.lastSyncedAt || '',
+        actionRequired: true
+      };
+    });
+
+  items.sort(function (a, b) {
+    const order = { changed: 0, new: 1, unchanged: 2 };
+    const ao = order[a.syncStatus] == null ? 9 : order[a.syncStatus];
+    const bo = order[b.syncStatus] == null ? 9 : order[b.syncStatus];
+    if (ao !== bo) return ao - bo;
+    return String(a.name).localeCompare(String(b.name), 'ja');
+  });
+
+  return {
+    ok: true,
+    folderName: folder.getName(),
+    counts: {
+      total: items.length,
+      changed: items.filter(function (x) { return x.syncStatus === 'changed'; }).length,
+      new: items.filter(function (x) { return x.syncStatus === 'new'; }).length,
+      unchanged: items.filter(function (x) { return x.syncStatus === 'unchanged'; }).length,
+      missing: missing.length
+    },
+    items: items,
+    missing: missing
+  };
+}
+
+function getDriveSyncDefaultsStep5(fileId) {
+  const id = String(fileId || '').trim();
+  if (!id) throw new Error('fileId がありません。');
+
+  const scan = scanDriveSyncStep5();
+  const item = scan.items.filter(function (row) {
+    return row.fileId === id;
+  })[0];
+
+  if (!item) throw new Error('Drive同期対象の資料が見つかりません。');
+
+  return {
+    ok: true,
+    item: item,
+    suggested: {
+      categoryId: item.categoryId || 'cat-other',
+      ownerDepartment: item.ownerDepartment || '',
+      versionLabel: formatDateTime_(DriveApp.getFileById(id).getLastUpdated()),
+      validFrom: item.validFrom || '',
+      validUntil: item.validUntil || ''
+    }
+  };
+}
+
+function markDriveSourceMissingStep5(sourceId) {
+  const id = String(sourceId || '').trim();
+  if (!id) throw new Error('sourceId がありません。');
+  return workerRequest_('/admin/rag/source-missing', 'post', {
+    sourceId: id
+  }, true);
+}
+
+function listRagAuditStep5(limit) {
+  const n = Math.max(1, Math.min(200, Number(limit) || 100));
+  const response = workerRequest_('/admin/rag/audit?limit=' + n, 'get', null, true);
+  return response && response.result && response.result.logs
+    ? response.result.logs
+    : [];
+}
+
 function previewDriveFileStep5(fileId, options) {
   const file = DriveApp.getFileById(String(fileId || '').trim());
   const info = getStructuredFileInfoStep5_(file);
@@ -949,6 +1114,38 @@ function registerDriveFileStep5(options) {
   }
 
   const file = DriveApp.getFileById(fileId);
+
+  if (payload.force !== true) {
+    try {
+      const currentDocs = listRagDocumentsStep5().filter(function (doc) {
+        return doc &&
+          doc.isCurrent === true &&
+          doc.sourceType === 'drive' &&
+          (doc.driveFileId === fileId || doc.sourceId === makeSourceId_(fileId));
+      });
+
+      const current = currentDocs.length ? currentDocs[0] : null;
+      if (current && current.status === 'active' && current.sourceModifiedAt) {
+        const registeredMs = new Date(current.sourceModifiedAt).getTime();
+        const driveMs = file.getLastUpdated().getTime();
+        if (registeredMs && driveMs <= registeredMs + 1000) {
+          return {
+            ok: true,
+            skipped: true,
+            reason: 'unchanged',
+            fileId: fileId,
+            sourceId: current.sourceId,
+            documentId: current.documentId,
+            revisionNo: Number(current.revisionNo || 1),
+            message: 'Drive原本に更新がないため、再Embeddingを行いませんでした。'
+          };
+        }
+      }
+    } catch (syncCheckError) {
+      console.warn('更新判定をスキップしました: ' + syncCheckError.message);
+    }
+  }
+
   const info = getStructuredFileInfoStep5_(file);
   if (!info.supported) throw new Error(info.note || 'この形式はまだ直接登録できません。');
 
