@@ -966,3 +966,7 @@ select:focus {
   .faq-chat-actions{align-items:stretch;flex-direction:column-reverse}
   .faq-chat-clear,.faq-chat-send{width:100%}
 }
+
+
+/* STEP5-10: FAQ表示時は通常生成フォームを確実に隠す */
+.editor-form[hidden]{display:none!important}
