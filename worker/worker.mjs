@@ -1455,6 +1455,7 @@ export default {
         return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
       }
       try {
+        await ensureOperationalSchema(env);
         const result = await buildRagBackupManifest(env);
         return json({ok:true,result},200,origin || '*');
       } catch (e) {
