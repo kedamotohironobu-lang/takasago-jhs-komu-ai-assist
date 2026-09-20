@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="admin.css?v=step5-11">
+  <link rel="stylesheet" href="admin.css?v=step5-12">
 </head>
 <body>
   <div class="admin-shell">
@@ -327,6 +327,31 @@
           <div class="readiness-warnings" id="readiness-warnings" hidden></div>
         </article>
 
+        <article class="panel audit-panel">
+          <div class="panel-head">
+            <div>
+              <h3>監査ログ</h3>
+              <p class="panel-description">資料の登録・新版切替・原本未確認など、RAG管理操作の履歴です。</p>
+            </div>
+            <button class="refresh-button" type="button" id="refresh-audit">↻ 更新</button>
+          </div>
+          <div class="table-wrap">
+            <table class="admin-table audit-table">
+              <thead>
+                <tr>
+                  <th>日時</th>
+                  <th>操作</th>
+                  <th>内容</th>
+                  <th>実行者</th>
+                </tr>
+              </thead>
+              <tbody id="audit-body">
+                <tr><td colspan="4">管理者ログイン後に表示します。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
         <p class="last-updated">最終確認: <span id="last-updated">—</span></p>
       </section>
     </main>
@@ -334,6 +359,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step5-11" defer></script>
+  <script src="admin.js?v=step5-12" defer></script>
 </body>
 </html>
