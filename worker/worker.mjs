@@ -864,7 +864,7 @@ export default {
     const origin = pickCorsOrigin(request, env);
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
     if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token,Authorization','Access-Control-Max-Age':'86400','Vary':'Origin'}});
-    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.7.0'},200,origin || '*');
+    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.8.0'},200,origin || '*');
     if (request.method === 'GET' && url.pathname === '/health/providers') {
       return json({
         ok:true,
@@ -1175,21 +1175,28 @@ export default {
     const requestId = crypto.randomUUID();
     try {
       if (valid.toolId === 'faq') {
-        const retrieval = await retrieveFaq(env, valid.input, 5);
-        if (!retrieval.configured) {
-          return json({ok:false,error:{code:'FAQ_RAG_NOT_CONFIGURED',message:'校内FAQ用の非公開資料ストレージが未設定です。'},requestId},503,origin || '*');
+        const staffAuth = await authenticateStaff(request, env);
+        if (!staffAuth?.ok) {
+          return json({
+            ok:false,
+            error:{
+              code:staffAuth?.code || 'STAFF_AUTH_REQUIRED',
+              message:staffAuth?.message || '校内FAQには職員ログインが必要です。'
+            },
+            requestId
+          },staffAuth?.status || 401,origin || '*');
         }
-        if (!retrieval.hits.length) {
-          return json({ok:true,text:faqNoHitText(retrieval.hasSources),provider:'retrieval-only',model:'none',requestId,sources:[]},200,origin || '*');
-        }
-        const result = await generateWithFallback(env, buildFaqMessages(valid, retrieval.hits));
+
+        const answer = await answerRagQuestion(env, valid.input);
         return json({
           ok:true,
-          text:String(result.text || '').trim(),
-          provider:result.provider,
-          model:result.model,
+          text:String(answer.answer || '登録資料では確認できません。').trim(),
+          status:answer.status,
+          aiCalled:Boolean(answer.aiCalled),
+          provider:answer.provider || 'retrieval-only',
+          model:answer.model || 'none',
           requestId,
-          sources:retrieval.hits.map(h=>({sourceId:h.sourceId,title:h.title,version:h.version,updatedAt:h.updatedAt,page:h.page,heading:h.heading,url:h.url}))
+          sources:Array.isArray(answer.sources) ? answer.sources : []
         },200,origin || '*');
       }
 
