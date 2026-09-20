@@ -108,6 +108,18 @@
     if(el) el.textContent=value;
   }
 
+  function versionAtLeast(value,major,minor,patch=0){
+    const parts=String(value||'')
+      .split('.')
+      .slice(0,3)
+      .map(v=>Number.parseInt(v,10)||0);
+    while(parts.length<3) parts.push(0);
+
+    if(parts[0]!==major) return parts[0]>major;
+    if(parts[1]!==minor) return parts[1]>minor;
+    return parts[2]>=patch;
+  }
+
   function bytes(value){
     const n=Number(value)||0;
     if(n<1024) return n+' B';
@@ -1298,8 +1310,8 @@
       acceptanceCheck(
         'worker',
         'Worker稼働',
-        Boolean(worker?.ok && String(worker?.version||'').startsWith('6.1')),
-        'version '+String(worker?.version||'不明')
+        Boolean(worker?.ok && versionAtLeast(worker?.version,6,1,0)),
+        'version '+String(worker?.version||'不明')+'（6.1.0以上）'
       );
       acceptanceCheck(
         'd1',
