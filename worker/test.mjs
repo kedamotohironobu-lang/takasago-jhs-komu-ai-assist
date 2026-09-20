@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import worker, { validatePayload, buildMessages, pickCorsOrigin } from './worker.mjs';
 import { applyEvidenceGate, buildEvidence } from './rag-retrieval.mjs';
+import { ensureOperationalSchema } from './usage-telemetry.mjs';
 
 let n=0;
 const ok=(cond,msg='assert')=>{assert.ok(cond,msg);n++;};
@@ -34,7 +35,61 @@ let res=await worker.fetch(new Request('https://x/health'),{});
 eq(res.status,200);
 let health=await res.json();
 eq(health.ok,true);
-eq(health.version,'6.9.0');
+eq(health.version,'6.9.1');
+
+// STEP6 operational schema: runtime must verify migrated tables without executing DDL.
+{
+  const operationalTables = [
+    'usage_events','usage_sources','feedback_events','improvement_actions','automation_runs'
+  ];
+  let preparedSql='';
+  let bound=[];
+  const env={
+    RAG_DB:{
+      prepare(sql){
+        preparedSql=String(sql);
+        return {
+          bind(...args){
+            bound=args;
+            return {
+              async all(){
+                return {results:operationalTables.map(name=>({name}))};
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+  const schema=await ensureOperationalSchema(env);
+  eq(schema.ok,true);
+  eq(schema.missingTables.length,0);
+  ok(preparedSql.includes('sqlite_master'));
+  eq(bound.length,operationalTables.length);
+}
+
+{
+  const env={
+    RAG_DB:{
+      prepare(){
+        return {
+          bind(){
+            return {
+              async all(){
+                return {results:[{name:'usage_events'}]};
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+  let schemaError=null;
+  try { await ensureOperationalSchema(env); } catch (e) { schemaError=e; }
+  eq(schemaError?.code,'OPERATIONAL_SCHEMA_NOT_READY');
+  ok(Array.isArray(schemaError?.missingTables));
+  ok(schemaError.missingTables.includes('automation_runs'));
+}
 
 res=await worker.fetch(new Request('https://x/health/faq'),{});
 eq(res.status,200);
