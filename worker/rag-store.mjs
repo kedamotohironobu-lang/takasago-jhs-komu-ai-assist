@@ -445,24 +445,67 @@ async function indexNextRagDocument(env, documentId, limit = INDEX_BATCH_SIZE) {
     db.prepare("UPDATE sync_jobs SET status='running',current_step='vectorizing',updated_at=CURRENT_TIMESTAMP WHERE document_id=? AND status IN ('waiting_review','running')").bind(documentId)
   ]);
 
-  const vectors = await Promise.all(chunks.map(async row => ({
-    id:row.chunk_id,
-    values:await embedDocument(env, {
-      title:doc.title,
-      heading:row.heading_path || '',
-      text:row.text
-    }),
-    metadata:{
-      documentId:doc.document_id,
-      chunkId:row.chunk_id,
-      sourceId:doc.source_id,
-      revisionNo:Number(doc.revision_no || 1),
-      categoryId:doc.category_id || 'cat-other',
-      title:doc.title
-    }
-  })));
+  let vectors = [];
+  let mutation = null;
 
-  const mutation = await vector.upsert(vectors);
+  try {
+    vectors = await Promise.all(chunks.map(async row => ({
+      id:row.chunk_id,
+      values:await embedDocument(env, {
+        title:doc.title,
+        heading:row.heading_path || '',
+        text:row.text
+      }),
+      metadata:{
+        documentId:doc.document_id,
+        chunkId:row.chunk_id,
+        sourceId:doc.source_id,
+        revisionNo:Number(doc.revision_no || 1),
+        categoryId:doc.category_id || 'cat-other',
+        title:doc.title
+      }
+    })));
+
+    mutation = await vector.upsert(vectors);
+  } catch (e) {
+    const failedIds = JSON.stringify(chunks.map(row => row.chunk_id));
+    await db.batch([
+      db.prepare(`
+        UPDATE chunks
+        SET embedding_status='error',updated_at=CURRENT_TIMESTAMP
+        WHERE chunk_id IN (
+          SELECT CAST(value AS TEXT) FROM json_each(?)
+        )
+      `).bind(failedIds),
+      db.prepare(`
+        UPDATE documents
+        SET status='error',vector_status='error',updated_at=CURRENT_TIMESTAMP
+        WHERE document_id=?
+      `).bind(documentId),
+      db.prepare(`
+        UPDATE sync_jobs
+        SET status='failed',
+            current_step='vectorizing',
+            items_failed=items_failed+?,
+            error_code='EMBEDDING_OR_VECTORIZE_FAILED',
+            error_message=?,
+            finished_at=CURRENT_TIMESTAMP,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE document_id=?
+          AND status IN ('waiting_review','running','queued')
+      `).bind(
+        chunks.length,
+        String(e?.message || 'Embedding / Vectorize処理に失敗しました。').slice(0,1000),
+        documentId
+      )
+    ]);
+    throw fail(
+      'EMBEDDING_OR_VECTORIZE_FAILED',
+      String(e?.message || 'Embedding / Vectorize処理に失敗しました。'),
+      502
+    );
+  }
+
   const readyIds = JSON.stringify(chunks.map(row => row.chunk_id));
 
   await db.prepare(`
@@ -740,6 +783,462 @@ async function markRagSourceMissing(env, sourceId, actorId = 'faq-admin') {
   };
 }
 
+async function softDeleteRagDocument(env, documentId, actorId = 'faq-admin') {
+  const db = requireDb(env);
+  const vector = requireVector(env);
+
+  const doc = await queryOne(db, `
+    SELECT document_id,source_id,revision_no,is_current,title,status,deleted_at
+    FROM documents WHERE document_id=?
+  `, documentId);
+  if (!doc) throw fail('DOCUMENT_NOT_FOUND', '資料が見つかりません。', 404);
+  if (Number(doc.is_current || 0) !== 1) {
+    throw fail('DELETE_CURRENT_ONLY', '安全のため、現行版だけを削除対象にできます。', 409);
+  }
+  if (doc.deleted_at) {
+    return { ok:true, changed:false, reason:'ALREADY_DELETED', documentId };
+  }
+
+  const rows = await db.prepare(
+    "SELECT vector_id FROM chunks WHERE document_id=? AND vector_id IS NOT NULL"
+  ).bind(documentId).all();
+  const vectorIds = (rows?.results || []).map(r => r.vector_id).filter(Boolean);
+
+  const jobId = `job-${crypto.randomUUID()}`;
+  const logId = `log-${crypto.randomUUID()}`;
+
+  await db.batch([
+    db.prepare("DELETE FROM chunks_fts WHERE document_id=?").bind(documentId),
+    db.prepare(`
+      UPDATE chunks
+      SET is_active=0,updated_at=CURRENT_TIMESTAMP
+      WHERE document_id=?
+    `).bind(documentId),
+    db.prepare(`
+      UPDATE documents
+      SET status='inactive',
+          deleted_at=CURRENT_TIMESTAMP,
+          updated_at=CURRENT_TIMESTAMP
+      WHERE document_id=?
+    `).bind(documentId),
+    db.prepare(`
+      INSERT INTO sync_jobs (
+        job_id,job_type,status,document_id,source_id,
+        items_total,items_processed,items_succeeded,items_failed,
+        current_step,progress_percent,estimated_chunk_count,
+        estimated_vector_dimensions,actual_vector_dimensions,
+        retry_count,created_by,started_at,finished_at,created_at,updated_at
+      )
+      VALUES (
+        ?,'delete','completed',?,?,?,
+        ?,?,0,'soft_deleted',100,?,0,0,0,?,
+        CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+      )
+    `).bind(
+      jobId,documentId,doc.source_id,
+      vectorIds.length,vectorIds.length,vectorIds.length,
+      vectorIds.length,actorId
+    ),
+    db.prepare(`
+      INSERT INTO audit_logs (
+        log_id,occurred_at,actor_id,action,entity_type,entity_id,summary,metadata_json
+      )
+      VALUES (?,CURRENT_TIMESTAMP,?,'document_soft_deleted','document',?,?,?)
+    `).bind(
+      logId,actorId,documentId,
+      `「${doc.title}」を論理削除しFAQ検索対象から除外`,
+      JSON.stringify({
+        sourceId:doc.source_id,
+        revisionNo:Number(doc.revision_no || 1),
+        vectorCount:vectorIds.length
+      })
+    )
+  ]);
+
+  const mutationIds = [];
+  for (let i = 0; i < vectorIds.length; i += 1000) {
+    try {
+      const mutation = await vector.deleteByIds(vectorIds.slice(i,i+1000));
+      if (mutation?.mutationId) mutationIds.push(mutation.mutationId);
+    } catch {
+      // D1/FTSが正本。残存vectorはauthoritative filterで除外される。
+    }
+  }
+
+  return {
+    ok:true,
+    changed:true,
+    documentId,
+    sourceId:doc.source_id,
+    status:'deleted',
+    removedVectors:vectorIds.length,
+    mutationIds
+  };
+}
+
+async function restoreRagDocument(env, documentId, actorId = 'faq-admin') {
+  const db = requireDb(env);
+
+  const doc = await queryOne(db, `
+    SELECT
+      document_id,source_id,revision_no,is_current,title,approval_status,
+      status,deleted_at,valid_until,chunk_count
+    FROM documents
+    WHERE document_id=?
+  `, documentId);
+
+  if (!doc) throw fail('DOCUMENT_NOT_FOUND', '資料が見つかりません。', 404);
+  if (Number(doc.is_current || 0) !== 1) {
+    throw fail('RESTORE_CURRENT_ONLY', '安全のため、現行版だけを復旧できます。', 409);
+  }
+  if (!doc.deleted_at) {
+    throw fail('DOCUMENT_NOT_DELETED', 'この資料は論理削除されていません。', 409);
+  }
+  if (doc.approval_status !== 'approved') {
+    throw fail('DOCUMENT_NOT_APPROVED', '承認済み資料だけ復旧できます。', 409);
+  }
+
+  if (doc.valid_until) {
+    const expiry = await queryOne(db, `
+      SELECT CASE
+        WHEN date(?) < date('now','+9 hours') THEN 1
+        ELSE 0
+      END AS expired
+    `, doc.valid_until);
+    if (Number(expiry?.expired || 0) === 1) {
+      throw fail(
+        'RESTORE_EXPIRED_DOCUMENT',
+        '有効期限を過ぎているため、そのまま復旧できません。Drive原本から有効期間を確認して新版登録してください。',
+        409
+      );
+    }
+  }
+
+  const jobId = `job-${crypto.randomUUID()}`;
+  const logId = `log-${crypto.randomUUID()}`;
+
+  await db.batch([
+    db.prepare("DELETE FROM chunks_fts WHERE document_id=?").bind(documentId),
+    db.prepare(`
+      UPDATE chunks
+      SET embedding_status='pending',
+          vector_id=NULL,
+          is_active=0,
+          updated_at=CURRENT_TIMESTAMP
+      WHERE document_id=?
+    `).bind(documentId),
+    db.prepare(`
+      UPDATE documents
+      SET status='processing',
+          vector_status='pending',
+          vectorized_at=NULL,
+          deleted_at=NULL,
+          updated_at=CURRENT_TIMESTAMP
+      WHERE document_id=?
+    `).bind(documentId),
+    db.prepare(`
+      INSERT INTO sync_jobs (
+        job_id,job_type,status,document_id,source_id,
+        items_total,items_processed,items_succeeded,items_failed,
+        current_step,progress_percent,estimated_chunk_count,
+        estimated_vector_dimensions,actual_vector_dimensions,
+        retry_count,created_by,created_at,updated_at
+      )
+      VALUES (
+        ?,'reindex','waiting_review',?,?,?,
+        0,0,0,'restore_pending',40,?,?,0,0,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+      )
+    `).bind(
+      jobId,documentId,doc.source_id,
+      Number(doc.chunk_count || 0),
+      Number(doc.chunk_count || 0),
+      Number(doc.chunk_count || 0) * RAG_CONFIG.embedding.dimensions,
+      actorId
+    ),
+    db.prepare(`
+      INSERT INTO audit_logs (
+        log_id,occurred_at,actor_id,action,entity_type,entity_id,summary,metadata_json
+      )
+      VALUES (?,CURRENT_TIMESTAMP,?,'document_restore_started','document',?,?,?)
+    `).bind(
+      logId,actorId,documentId,
+      `「${doc.title}」の復旧を開始`,
+      JSON.stringify({
+        sourceId:doc.source_id,
+        revisionNo:Number(doc.revision_no || 1),
+        jobId
+      })
+    )
+  ]);
+
+  return {
+    ok:true,
+    documentId,
+    sourceId:doc.source_id,
+    jobId,
+    status:'processing',
+    needsIndexing:true
+  };
+}
+
+async function listRagJobs(env, limit = 100) {
+  const db = requireDb(env);
+  const safeLimit = Math.max(1, Math.min(200, Number(limit) || 100));
+
+  const rows = await db.prepare(`
+    SELECT
+      j.job_id,j.job_type,j.status,j.document_id,j.previous_document_id,
+      j.source_id,j.drive_file_id,j.items_total,j.items_processed,
+      j.items_succeeded,j.items_failed,j.current_step,j.progress_percent,
+      j.retry_count,j.error_code,j.error_message,j.created_by,
+      j.started_at,j.finished_at,j.created_at,j.updated_at,
+      d.title,d.revision_no,d.status AS document_status,d.deleted_at
+    FROM sync_jobs j
+    LEFT JOIN documents d ON d.document_id=j.document_id
+    ORDER BY j.updated_at DESC
+    LIMIT ${safeLimit}
+  `).all();
+
+  const now = Date.now();
+
+  return {
+    jobs:(rows?.results || []).map(row => {
+      const updatedMs = Date.parse(String(row.updated_at || ''));
+      const stalled =
+        ['queued','running','waiting_review'].includes(String(row.status || '')) &&
+        Number.isFinite(updatedMs) &&
+        now - updatedMs > 24*60*60*1000;
+
+      return {
+        jobId:String(row.job_id || ''),
+        jobType:String(row.job_type || ''),
+        status:String(row.status || ''),
+        documentId:String(row.document_id || ''),
+        previousDocumentId:String(row.previous_document_id || ''),
+        sourceId:String(row.source_id || ''),
+        driveFileId:String(row.drive_file_id || ''),
+        itemsTotal:Number(row.items_total || 0),
+        itemsProcessed:Number(row.items_processed || 0),
+        itemsSucceeded:Number(row.items_succeeded || 0),
+        itemsFailed:Number(row.items_failed || 0),
+        currentStep:String(row.current_step || ''),
+        progressPercent:Number(row.progress_percent || 0),
+        retryCount:Number(row.retry_count || 0),
+        errorCode:String(row.error_code || ''),
+        errorMessage:String(row.error_message || ''),
+        createdBy:String(row.created_by || ''),
+        startedAt:String(row.started_at || ''),
+        finishedAt:String(row.finished_at || ''),
+        createdAt:String(row.created_at || ''),
+        updatedAt:String(row.updated_at || ''),
+        title:String(row.title || ''),
+        revisionNo:Number(row.revision_no || 0),
+        documentStatus:String(row.document_status || ''),
+        deletedAt:String(row.deleted_at || ''),
+        stalled
+      };
+    })
+  };
+}
+
+async function retryRagJob(env, jobId, actorId = 'faq-admin') {
+  const db = requireDb(env);
+
+  const job = await queryOne(db, `
+    SELECT
+      j.*,d.title,d.status AS document_status,d.deleted_at,d.approval_status
+    FROM sync_jobs j
+    LEFT JOIN documents d ON d.document_id=j.document_id
+    WHERE j.job_id=?
+  `, jobId);
+
+  if (!job) throw fail('JOB_NOT_FOUND', '同期ジョブが見つかりません。', 404);
+  if (!job.document_id) {
+    throw fail('JOB_DOCUMENT_MISSING', 'このジョブには再試行対象の資料がありません。', 409);
+  }
+  if (job.deleted_at) {
+    throw fail('JOB_DOCUMENT_DELETED', '論理削除済み資料のジョブは再試行できません。先に資料を復旧してください。', 409);
+  }
+  if (job.approval_status !== 'approved') {
+    throw fail('DOCUMENT_NOT_APPROVED', '承認済み資料だけ再試行できます。', 409);
+  }
+
+  const updatedMs = Date.parse(String(job.updated_at || ''));
+  const stalled =
+    ['queued','running','waiting_review'].includes(String(job.status || '')) &&
+    Number.isFinite(updatedMs) &&
+    Date.now() - updatedMs > 24*60*60*1000;
+
+  if (String(job.status || '') !== 'failed' && !stalled) {
+    throw fail(
+      'JOB_NOT_RETRYABLE',
+      'failed、または24時間以上停滞したジョブだけ再試行できます。',
+      409
+    );
+  }
+
+  const counts = await queryOne(db, `
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN embedding_status='ready' THEN 1 ELSE 0 END) AS ready
+    FROM chunks
+    WHERE document_id=?
+  `, job.document_id);
+
+  const total = Number(counts?.total || 0);
+  const ready = Number(counts?.ready || 0);
+  const progress = total
+    ? Math.min(90, 40 + Math.floor((ready / total) * 50))
+    : 40;
+
+  const logId = `log-${crypto.randomUUID()}`;
+
+  await db.batch([
+    db.prepare(`
+      UPDATE chunks
+      SET embedding_status='pending',
+          vector_id=NULL,
+          is_active=0,
+          updated_at=CURRENT_TIMESTAMP
+      WHERE document_id=?
+        AND embedding_status IN ('error','indexing')
+    `).bind(job.document_id),
+    db.prepare(`
+      UPDATE documents
+      SET status='processing',
+          vector_status=CASE
+            WHEN EXISTS(
+              SELECT 1 FROM chunks
+              WHERE document_id=? AND embedding_status='pending'
+            ) THEN 'pending'
+            ELSE vector_status
+          END,
+          updated_at=CURRENT_TIMESTAMP
+      WHERE document_id=?
+    `).bind(job.document_id,job.document_id),
+    db.prepare(`
+      UPDATE sync_jobs
+      SET status='waiting_review',
+          current_step='retry_pending',
+          progress_percent=?,
+          retry_count=retry_count+1,
+          error_code=NULL,
+          error_message=NULL,
+          started_at=NULL,
+          finished_at=NULL,
+          updated_at=CURRENT_TIMESTAMP
+      WHERE job_id=?
+    `).bind(progress,jobId),
+    db.prepare(`
+      INSERT INTO audit_logs (
+        log_id,occurred_at,actor_id,action,entity_type,entity_id,summary,metadata_json
+      )
+      VALUES (?,CURRENT_TIMESTAMP,?,'sync_job_retried','sync_job',?,?,?)
+    `).bind(
+      logId,actorId,jobId,
+      `「${job.title || job.source_id || job.document_id}」の同期ジョブを再試行`,
+      JSON.stringify({
+        documentId:job.document_id,
+        sourceId:job.source_id || '',
+        previousStatus:job.status,
+        stalled,
+        ready,
+        total
+      })
+    )
+  ]);
+
+  return {
+    ok:true,
+    jobId,
+    documentId:String(job.document_id || ''),
+    sourceId:String(job.source_id || ''),
+    ready,
+    total,
+    remaining:Math.max(0,total-ready),
+    retryCount:Number(job.retry_count || 0)+1,
+    needsIndexing:ready < total
+  };
+}
+
+async function buildRagBackupManifest(env) {
+  const db = requireDb(env);
+
+  const [categories,documents,chunks,audit,jobs] = await Promise.all([
+    db.prepare(`
+      SELECT category_id,name,slug,parent_id,sort_order,is_active,created_at,updated_at
+      FROM categories ORDER BY sort_order,name
+    `).all(),
+    db.prepare(`
+      SELECT
+        document_id,source_id,revision_no,is_current,source_type,drive_file_id,
+        file_name,title,mime_type,category_id,owner_department,version_label,
+        file_size_bytes,page_count,sheet_count,slide_count,content_hash_sha256,
+        source_modified_at,valid_from,valid_until,approval_status,status,
+        approved_by,approved_at,extraction_status,extracted_char_count,chunk_count,
+        vector_status,vectorized_at,last_synced_at,created_at,updated_at,deleted_at
+      FROM documents
+      ORDER BY source_id,revision_no
+    `).all(),
+    db.prepare(`
+      SELECT
+        chunk_id,document_id,chunk_no,page_from,page_to,sheet_name,slide_no,
+        heading_path,char_count,content_hash_sha256,vector_id,
+        embedding_status,is_active,created_at,updated_at
+      FROM chunks
+      ORDER BY document_id,chunk_no
+    `).all(),
+    db.prepare(`
+      SELECT
+        log_id,occurred_at,actor_id,action,entity_type,entity_id,
+        summary,metadata_json,request_id
+      FROM audit_logs
+      ORDER BY occurred_at
+      LIMIT 5000
+    `).all(),
+    db.prepare(`
+      SELECT
+        job_id,job_type,status,document_id,previous_document_id,source_id,
+        drive_file_id,items_total,items_processed,items_succeeded,items_failed,
+        current_step,progress_percent,estimated_chunk_count,
+        estimated_vector_dimensions,actual_vector_dimensions,retry_count,
+        error_code,error_message,created_by,started_at,finished_at,
+        created_at,updated_at
+      FROM sync_jobs
+      ORDER BY created_at
+      LIMIT 5000
+    `).all()
+  ]);
+
+  return {
+    schema:'takasago-jhs-komu-ai-rag-backup-manifest-v1',
+    generatedAt:new Date().toISOString(),
+    containsChunkText:false,
+    containsSecrets:false,
+    sourceOfTruth:'Google Drive',
+    recoveryNote:'資料本文はDrive原本から再抽出してください。このマニフェストは資料メタデータ・ハッシュ・監査・ジョブの復旧確認用です。',
+    categories:categories?.results || [],
+    documents:documents?.results || [],
+    chunks:chunks?.results || [],
+    auditLogs:(audit?.results || []).map(row => {
+      let metadata = {};
+      try { metadata = row.metadata_json ? JSON.parse(row.metadata_json) : {}; } catch {}
+      return {
+        log_id:row.log_id,
+        occurred_at:row.occurred_at,
+        actor_id:row.actor_id,
+        action:row.action,
+        entity_type:row.entity_type,
+        entity_id:row.entity_id,
+        summary:row.summary,
+        metadata,
+        request_id:row.request_id
+      };
+    }),
+    syncJobs:jobs?.results || []
+  };
+}
+
 async function runRagMaintenance(env, actorId = 'system-maintenance') {
   const db = requireDb(env);
   const vector = requireVector(env);
@@ -957,6 +1456,11 @@ export {
   finalizeRagDocument,
   getRagSourceState,
   markRagSourceMissing,
+  softDeleteRagDocument,
+  restoreRagDocument,
+  listRagJobs,
+  retryRagJob,
+  buildRagBackupManifest,
   runRagMaintenance,
   cleanupRagTestDocument,
   cleanupRagTestSource
