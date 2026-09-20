@@ -90,6 +90,7 @@
     usageTopDocuments:$('#usage-top-documents'),
     usageProviders:$('#usage-providers'),
     usageTools:$('#usage-tools'),
+    usageFeedbackReasons:$('#usage-feedback-reasons'),
     operationsHealthBadge:$('#operations-health-badge'),
     operationsAlerts:$('#operations-alerts')
   };
@@ -861,6 +862,23 @@
           <strong>${Number(row.count||0).toLocaleString()}回</strong>
         </div>
       `).join('') || '<p class="empty-message">利用データはまだありません。</p>';
+    }
+
+    if(nodes.usageFeedbackReasons){
+      const labels={
+        wrong_source:'根拠が違う',
+        answer_incomplete:'回答が足りない',
+        hard_to_understand:'わかりにくい',
+        outdated:'情報が古い',
+        other:'その他'
+      };
+      const rows=Array.isArray(s.feedbackReasons)?s.feedbackReasons:[];
+      nodes.usageFeedbackReasons.innerHTML=rows.map(row=>`
+        <div class="usage-list-row">
+          <span>${escapeHtml(labels[row.reason_code]||row.reason_code||'その他')}</span>
+          <strong>${Number(row.count||0).toLocaleString()}件</strong>
+        </div>
+      `).join('') || '<p class="empty-message">改善フィードバックはまだありません。</p>';
     }
 
     const o=operations||{};
