@@ -52,7 +52,9 @@
     driveAuthRequired:$('#drive-auth-required'),
     driveContent:$('#drive-content'),
     driveSyncBody:$('#drive-sync-body'),
-    refreshDriveStatus:$('#refresh-drive-status')
+    refreshDriveStatus:$('#refresh-drive-status'),
+    runMaintenance:$('#run-maintenance'),
+    maintenanceResult:$('#maintenance-result')
   };
 
   function showToast(message, ms=2600){
@@ -636,6 +638,44 @@
     if(nodes.overallLabel) nodes.overallLabel.textContent=all?'基盤正常':'要確認';
   }
 
+  async function runMaintenanceNowAdmin(){
+    if(!state.authenticated){
+      showToast('管理者ログインが必要です。');
+      return;
+    }
+
+    if(nodes.runMaintenance){
+      nodes.runMaintenance.disabled=true;
+      nodes.runMaintenance.textContent='点検中…';
+    }
+
+    try{
+      const data=await authJson('/admin/rag/maintenance',{
+        method:'POST',
+        body:JSON.stringify({})
+      });
+      const r=data?.result||{};
+
+      if(nodes.maintenanceResult){
+        nodes.maintenanceResult.hidden=false;
+        nodes.maintenanceResult.textContent=
+          '期限切れ除外 '+Number(r.expiredCount||0)+'件 ／ '+
+          '24時間以上停滞しているジョブ '+Number(r.stalledJobCount||0)+'件';
+      }
+
+      showToast('RAGメンテナンスを実行しました。');
+      await Promise.allSettled([refreshAll(),loadDocuments(),loadAuditLogs()]);
+    }catch(err){
+      console.error(err);
+      showToast(err?.message||'メンテナンスに失敗しました。',4200);
+    }finally{
+      if(nodes.runMaintenance){
+        nodes.runMaintenance.disabled=false;
+        nodes.runMaintenance.textContent='期限・状態を今すぐ点検';
+      }
+    }
+  }
+
   async function refreshAll(){
     if(state.loading) return;
     state.loading=true;
@@ -681,6 +721,7 @@
   nodes.refreshDocuments?.addEventListener('click',loadDocuments);
   nodes.refreshAudit?.addEventListener('click',loadAuditLogs);
   nodes.refreshDriveStatus?.addEventListener('click',loadDocuments);
+  nodes.runMaintenance?.addEventListener('click',runMaintenanceNowAdmin);
   nodes.runRagTest?.addEventListener('click',runRagTest);
   nodes.registerAdminTest?.addEventListener('click',registerAdminSyntheticTest);
   nodes.cleanupAdminTest?.addEventListener('click',cleanupAdminSyntheticTest);
