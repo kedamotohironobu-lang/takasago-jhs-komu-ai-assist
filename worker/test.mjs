@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import worker, { validatePayload, buildMessages, pickCorsOrigin } from './worker.mjs';
 import { faqStatus, retrieveFaq, validateSourcePayload, upsertFaqSource } from './faq-rag.mjs';
+import { applyEvidenceGate, buildEvidence } from './rag-retrieval.mjs';
 
 let n=0;
 const ok=(cond,msg='assert')=>{assert.ok(cond,msg);n++;};
@@ -123,3 +124,128 @@ ok(calls.some(x=>x.includes('groq')));
 globalThis.fetch=realFetch;
 
 console.log(`STEP4 unit/integration tests: ${n} assertions passed`);
+
+
+// STEP5-6 evidence gate tests
+{
+  const direct = applyEvidenceGate([
+    {
+      chunkId:'c-good',
+      authoritative:true,
+      vectorRank:1,
+      vectorScore:0.8282954,
+      ftsRank:1,
+      ftsScore:-0.00001,
+      rrfScore:0.0327,
+      fusedRank:1
+    },
+    {
+      chunkId:'c-distractor',
+      authoritative:true,
+      vectorRank:2,
+      vectorScore:0.7431142,
+      ftsRank:2,
+      ftsScore:-0.000002,
+      rrfScore:0.0322,
+      fusedRank:2
+    }
+  ]);
+  eq(direct[0].accepted,true);
+  eq(direct[0].gateReason,'hybrid_agreement');
+  eq(direct[1].accepted,false);
+
+  const paraphrase = applyEvidenceGate([
+    {
+      chunkId:'c-good',
+      authoritative:true,
+      vectorRank:1,
+      vectorScore:0.7997454,
+      ftsRank:1,
+      ftsScore:-0.000002,
+      rrfScore:0.0327,
+      fusedRank:1
+    },
+    {
+      chunkId:'c-other',
+      authoritative:true,
+      vectorRank:2,
+      vectorScore:0.70004636,
+      ftsRank:null,
+      ftsScore:null,
+      rrfScore:0.0161,
+      fusedRank:2
+    }
+  ]);
+  eq(paraphrase[0].accepted,true);
+  eq(paraphrase[1].accepted,false);
+
+  const negative = applyEvidenceGate([
+    {
+      chunkId:'c-unrelated-1',
+      authoritative:true,
+      vectorRank:1,
+      vectorScore:0.6101101,
+      ftsRank:null,
+      ftsScore:null,
+      rrfScore:0.0163,
+      fusedRank:1
+    },
+    {
+      chunkId:'c-unrelated-2',
+      authoritative:true,
+      vectorRank:2,
+      vectorScore:0.5521759,
+      ftsRank:null,
+      ftsScore:null,
+      rrfScore:0.0161,
+      fusedRank:2
+    }
+  ]);
+  eq(negative[0].accepted,false);
+  eq(negative[1].accepted,false);
+
+  const evidence = buildEvidence([
+    {
+      ...direct[0],
+      documentId:'doc-1',
+      sourceId:'source-1',
+      revisionNo:1,
+      title:'資料',
+      fileName:'資料.txt',
+      versionLabel:'v1',
+      categoryId:'cat-other',
+      categoryName:'その他',
+      ownerDepartment:'test',
+      headingPath:'備品A',
+      pageFrom:null,
+      pageTo:null,
+      sheetName:'',
+      slideNo:null,
+      chunkNo:1,
+      text:'テスト備品Aの確認日は金曜日です。'
+    },
+    {
+      ...direct[1],
+      documentId:'doc-1',
+      sourceId:'source-1',
+      revisionNo:1,
+      title:'資料',
+      fileName:'資料.txt',
+      versionLabel:'v1',
+      categoryId:'cat-other',
+      categoryName:'その他',
+      ownerDepartment:'test',
+      headingPath:'会議B',
+      pageFrom:null,
+      pageTo:null,
+      sheetName:'',
+      slideNo:null,
+      chunkNo:2,
+      text:'テスト会議Bの資料は前日までに確認します。'
+    }
+  ],4);
+  eq(evidence.length,1);
+  eq(evidence[0].chunkIds[0],'c-good');
+}
+
+console.log('STEP5-6 evidence gate tests passed');
