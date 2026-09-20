@@ -25,11 +25,11 @@ const RAG_CONFIG = Object.freeze({
     // STEP5-6 provisional evidence gate.
     // Calibrate again after a real-school question set is available.
     gate: Object.freeze({
-      hybridMinVectorScore: 0.65,
-      hybridMaxVectorRank: 5,
+      hybridMinVectorScore: 0.75,
+      hybridMaxVectorRank: 3,
       hybridMaxFtsRank: 3,
-      vectorOnlyMinScore: 0.78,
-      vectorOnlyMinLead: 0.05
+      vectorOnlyMinScore: 0.82,
+      vectorOnlyMinLead: 0.08
     })
   }),
 
