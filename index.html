@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校向け 校務AIアシスト。校務文書、文書チェック、保護者連絡文などをシンプルな操作で支援する試作版です。">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="assets/css/style.css?v=step5-7">
+  <link rel="stylesheet" href="assets/css/style.css?v=step5-9">
 </head>
 <body>
   <main class="app-shell">
@@ -129,6 +129,21 @@
               </div>
             </div>
 
+            <section class="faq-auth-panel" id="faq-auth-panel" hidden>
+              <div class="faq-auth-copy">
+                <strong id="faq-auth-title">校内FAQは職員ログインが必要です</strong>
+                <p id="faq-auth-description">承認済みの校内資料を扱うため、許可されたGoogleアカウントでログインしてください。</p>
+              </div>
+              <div class="faq-auth-actions">
+                <div id="faq-google-signin" hidden></div>
+                <div class="faq-signed-user" id="faq-signed-user" hidden>
+                  <span id="faq-user-name"></span>
+                  <button type="button" id="faq-signout-button">ログアウト</button>
+                </div>
+                <span class="faq-auth-badge" id="faq-auth-badge">🔒 未ログイン</span>
+              </div>
+            </section>
+
             <form id="editor-form" class="editor-form">
               <label class="field-block">
                 <span class="field-label" id="input-label">連絡内容（箇条書きでもOK）</span>
@@ -179,6 +194,11 @@
           <article class="result-card">
             <pre id="result-output" class="result-output"></pre>
           </article>
+
+          <section class="faq-result-sources" id="faq-result-sources" hidden>
+            <h3>根拠資料</h3>
+            <div id="faq-result-source-list"></div>
+          </section>
         </div>
 
         <aside class="result-side">
@@ -225,10 +245,11 @@
   <div id="app-toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <footer class="site-footer">
-    <p>高砂市立高砂中学校　校務AIアシスト — STEP 5-7 管理者ダッシュボード版</p>
+    <p>高砂市立高砂中学校　校務AIアシスト — STEP 5-9 新RAG FAQ版</p>
     <p>© <span data-current-year></span> Takasago Junior High School AI Assist Prototype</p>
   </footer>
 
-  <script src="assets/js/app.js?v=step5-7" defer></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="assets/js/app.js?v=step5-9" defer></script>
 </body>
 </html>
