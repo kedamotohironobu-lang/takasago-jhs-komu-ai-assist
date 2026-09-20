@@ -625,6 +625,27 @@ function ragVectorStatus(env) {
   };
 }
 
+async function listRagCategoriesForAdmin(env) {
+  if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
+    throw Object.assign(new Error('RAG_DB が設定されていません。'), { code:'RAG_DB_NOT_CONFIGURED', status:503 });
+  }
+  const rows = await env.RAG_DB.prepare(`
+    SELECT category_id,name,slug,parent_id,sort_order
+    FROM categories
+    WHERE is_active=1
+    ORDER BY sort_order,name
+  `).all();
+  return {
+    categories:(rows?.results || []).map(row => ({
+      categoryId:String(row.category_id || ''),
+      name:String(row.name || ''),
+      slug:String(row.slug || ''),
+      parentId:String(row.parent_id || ''),
+      sortOrder:Number(row.sort_order || 0)
+    }))
+  };
+}
+
 async function listRagDocumentsForAdmin(env) {
   if (!env?.RAG_DB || typeof env.RAG_DB.prepare !== 'function') {
     throw Object.assign(new Error('RAG_DB が設定されていません。'), { code:'RAG_DB_NOT_CONFIGURED', status:503 });
@@ -783,7 +804,7 @@ export default {
     const origin = pickCorsOrigin(request, env);
     if (request.headers.get('Origin') && !origin) return json({ok:false,error:{code:'ORIGIN_NOT_ALLOWED',message:'このサイトからは利用できません。'}},403,'null');
     if (request.method === 'OPTIONS') return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin || '*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-FAQ-Admin-Token,Authorization','Access-Control-Max-Age':'86400','Vary':'Origin'}});
-    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.5.0'},200,origin || '*');
+    if (request.method === 'GET' && url.pathname === '/health') return json({ok:true,service:'takasago-jhs-komu-ai-assist-api',version:'5.6.0'},200,origin || '*');
     if (request.method === 'GET' && url.pathname === '/health/providers') {
       return json({
         ok:true,
@@ -944,6 +965,19 @@ export default {
         return json({ok:true,result},200,origin || '*');
       } catch (e) {
         return json({ok:false,error:{code:e?.code || 'RAG_TEST_CLEANUP_FAILED',message:String(e?.message || 'RAG test cleanup failed')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/rag/categories') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      try {
+        const result = await listRagCategoriesForAdmin(env);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({ok:false,error:{code:e?.code || 'RAG_CATEGORY_LIST_FAILED',message:String(e?.message || 'カテゴリ一覧を取得できませんでした。')}},e?.status || 500,origin || '*');
       }
     }
 
