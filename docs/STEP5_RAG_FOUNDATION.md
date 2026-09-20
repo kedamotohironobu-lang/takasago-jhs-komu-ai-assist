@@ -570,3 +570,68 @@ Google Cloud OAuth client:
   https://kedamotohironobu-lang.github.io
 
 popup callback方式のため、この実装ではredirect URIは使用しない。
+
+
+## STEP5-10 FAQチャット
+
+先生向け「校内FAQ」を通常の文章生成画面ではなく、専用チャットUIへ変更する。
+
+### 認証
+
+- 校内FAQのみGoogle職員認証必須
+- ADMIN_EMAILSはFAQ利用可
+- STAFF_EMAILSで個別職員を許可可能
+- STAFF_DOMAINSでGoogle Workspaceドメイン単位の許可が可能
+- FAQ以外の9機能は従来どおり
+
+### 会話文脈
+
+検索に利用してよい会話情報:
+- 今回の先生の質問
+- 必要な場合のみ、直前の先生の質問
+
+検索に利用しない:
+- 前回のAI回答
+- それ以前のAI回答
+- 画面に表示されているAI文章
+
+直前の先生の質問を使う条件:
+- 「それ」「その場合」「では」等の明示的な指示語
+- 「いつですか？」「誰に出しますか？」等の短い追質問
+
+新しい独立質問では前問を検索文脈へ混ぜない。
+
+### チャット表示
+
+- 先生: 右側
+- 校内FAQ: 左側
+- 回答ごとにD1由来の根拠資料カード
+- contextUsed=trueの場合のみ「直前の先生の質問を補助文脈として検索」と表示
+- 会話をクリアすると previousUserQuestion も破棄
+- 会話履歴はブラウザ表示用であり、AI回答を検索根拠へ送信しない
+
+### 本番FAQ経路
+
+```text
+先生
+  ↓ Google職員認証
+GitHub Pages FAQ chat
+  ↓ current question + 必要時のみ previous USER question
+Cloudflare Worker
+  ↓
+Vectorize Top15 + FTS5 Top15
+  ↓
+RRF
+  ↓
+D1 authoritative filter
+  ↓
+Evidence Gate
+  ├─ weak -> AI未呼び出し / 登録資料では確認できません
+  └─ strong -> Cerebras -> Groq -> Gemini
+                 ↓
+           evidenceChunkIds検証
+                 ↓
+            D1出典カード
+```
+
+Worker version: 5.9.0
