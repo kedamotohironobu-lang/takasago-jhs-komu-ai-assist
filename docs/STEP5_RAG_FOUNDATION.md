@@ -876,3 +876,111 @@ Apps Scriptトリガー管理のため追加:
 既存デプロイ更新時にGoogleの追加承認が求められる場合がある。
 
 Worker version: 5.12.0
+
+
+## STEP5-14 運用・復旧
+
+本番運用前の最終仕上げ。
+
+### 資料削除
+
+物理削除は禁止。
+
+対象:
+- current
+- active
+- deleted_at IS NULL
+
+処理:
+- FTS削除
+- chunks.is_active=0
+- documents.status='inactive'
+- documents.deleted_at=CURRENT_TIMESTAMP
+- Vectorize IDs best-effort削除
+- sync_jobsへ delete/completed
+- audit: document_soft_deleted
+
+Drive原本・D1本文・版履歴・監査ログは保持する。
+
+### 資料復旧
+
+対象:
+- current
+- deleted_at IS NOT NULL
+- approval_status='approved'
+- 有効期限内
+
+処理:
+- deleted_at解除
+- documents.status='processing'
+- chunks.embedding_status='pending'
+- vector_id=NULL
+- reindex job作成
+- index-next
+- Vectorize
+- finalize
+- active復帰
+
+期限切れ資料は直接復旧せず、Driveから有効期間を確認して新版登録する。
+
+### ジョブ失敗管理
+
+Embedding / Vectorizeエラー時:
+- 対象chunk: embedding_status='error'
+- document: status='error', vector_status='error'
+- sync_job: status='failed'
+- error_code='EMBEDDING_OR_VECTORIZE_FAILED'
+
+再試行可能:
+- failed
+- queued/running/waiting_reviewが24時間以上停滞
+
+再試行:
+- error/indexing chunkをpendingへ
+- retry_count + 1
+- errorをクリア
+- document processing
+- index-next / finalize
+- audit: sync_job_retried
+
+### バックアップマニフェスト
+
+GET /admin/rag/backup-manifest
+
+管理者Google認証必須。
+
+含む:
+- categories
+- documents metadata
+- chunk metadata/hash
+- audit logs
+- sync jobs
+
+含まない:
+- chunk本文
+- API key
+- FAQ_ADMIN_TOKEN
+- Google ID token
+- FAQ会話履歴
+
+Driveを本文の正本とする。
+D1/Vectorize障害時はDriveから再構築する。
+
+### 管理者UI
+
+資料管理:
+- active現行資料: 「検索から外す」
+- 論理削除済み現行資料: 「復旧」
+- 旧revision: 履歴保持
+
+システム状態:
+- 同期ジョブ一覧
+- failed/stalled再試行
+- バックアップマニフェスト
+- 監査ログ
+
+### 運用マニュアル
+
+docs/ADMIN_OPERATION_MANUAL.md
+
+Worker version: 5.13.0
