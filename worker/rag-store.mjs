@@ -1217,7 +1217,7 @@ async function retryRagJob(env, jobId, actorId = 'faq-admin') {
 async function buildRagBackupManifest(env) {
   const db = requireDb(env);
 
-  const [categories,documents,chunks,audit,jobs] = await Promise.all([
+  const [categories,documents,chunks,audit,jobs,improvementActions] = await Promise.all([
     db.prepare(`
       SELECT category_id,name,slug,parent_id,sort_order,is_active,created_at,updated_at
       FROM categories ORDER BY sort_order,name
@@ -1260,6 +1260,14 @@ async function buildRagBackupManifest(env) {
       FROM sync_jobs
       ORDER BY created_at
       LIMIT 5000
+    `).all(),
+    db.prepare(`
+      SELECT
+        action_id,candidate_id,candidate_type,document_id,source_id,title,
+        level,status,started_at,completed_at,created_at,updated_at
+      FROM improvement_actions
+      ORDER BY updated_at
+      LIMIT 5000
     `).all()
   ]);
 
@@ -1288,7 +1296,8 @@ async function buildRagBackupManifest(env) {
         request_id:row.request_id
       };
     }),
-    syncJobs:jobs?.results || []
+    syncJobs:jobs?.results || [],
+    improvementActions:improvementActions?.results || []
   };
 }
 
