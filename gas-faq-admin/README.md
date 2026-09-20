@@ -45,14 +45,16 @@ current / activeへ切替
 
 Googleスプレッドシートはシート単位、Googleスライドはスライド単位で登録対象を選択できます。
 
-## STEP5-8後半で追加
+## STEP5-8後半対応
 
-- PDF
-- Word (.doc/.docx)
-- Excel (.xls/.xlsx)
-- PowerPoint (.ppt/.pptx)
+- Word (.doc/.docx): 一時Googleドキュメントへ変換して抽出
+- Excel (.xls/.xlsx): 一時Googleスプレッドシートへ変換し、シート単位で抽出
+- PowerPoint (.ppt/.pptx): 一時Googleスライドへ変換し、スライド単位で抽出
+- PDF: 管理者が「PDF変換/OCRを許可」を確認した場合だけ、Google DriveのPDF→Googleドキュメント変換/OCRを実行
 
-PDFは通常のテキスト抽出を優先し、OCRが必要な場合だけ管理者確認後に処理する設計とします。
+一時変換ファイルは抽出後に削除し、原本は変更しません。
+
+Apps Scriptでは拡張Driveサービス（Drive API v3）を有効化し、`drive.file` scopeを使用します。
 
 ## Apps Script側の主な関数
 
