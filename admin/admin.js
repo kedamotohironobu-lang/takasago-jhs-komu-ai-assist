@@ -885,9 +885,10 @@
     for(const id of ACCEPTANCE_MANUAL_IDS){
       state.acceptance.manual[id]=Boolean(saved[id]);
     }
-    nodes.acceptanceManualChecks.forEach(input=>{
-      input.checked=Boolean(state.acceptance.manual[input.dataset.acceptanceManual]);
-    });
+    (Array.isArray(nodes.acceptanceManualChecks) ? nodes.acceptanceManualChecks : [])
+      .forEach(input=>{
+        input.checked=Boolean(state.acceptance.manual[input.dataset.acceptanceManual]);
+      });
   }
 
   function saveAcceptanceManualState(){
@@ -1604,7 +1605,8 @@
   nodes.runAcceptanceSuite?.addEventListener('click',runFinalAcceptanceSuite);
   nodes.downloadAcceptanceReport?.addEventListener('click',downloadAcceptanceReport);
   nodes.recordAcceptanceResult?.addEventListener('click',recordAcceptanceResult);
-  nodes.acceptanceManualChecks.forEach(input=>{
+  (Array.isArray(nodes.acceptanceManualChecks) ? nodes.acceptanceManualChecks : [])
+    .forEach(input=>{
     input.addEventListener('change',()=>{
       state.acceptance.manual[input.dataset.acceptanceManual]=Boolean(input.checked);
       saveAcceptanceManualState();
