@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import worker, { validatePayload, buildMessages, pickCorsOrigin } from './worker.mjs';
 import { applyEvidenceGate, buildEvidence } from './rag-retrieval.mjs';
 import { ensureOperationalSchema } from './usage-telemetry.mjs';
+import { embedWithGemini, isRetryableEmbeddingStatus } from './embedding-gemini.mjs';
 
 let n=0;
 const ok=(cond,msg='assert')=>{assert.ok(cond,msg);n++;};
@@ -35,7 +36,7 @@ let res=await worker.fetch(new Request('https://x/health'),{});
 eq(res.status,200);
 let health=await res.json();
 eq(health.ok,true);
-eq(health.version,'6.9.1');
+eq(health.version,'6.9.2');
 
 // STEP6 operational schema: runtime must verify migrated tables without executing DDL.
 {
@@ -89,6 +90,39 @@ eq(health.version,'6.9.1');
   eq(schemaError?.code,'OPERATIONAL_SCHEMA_NOT_READY');
   ok(Array.isArray(schemaError?.missingTables));
   ok(schemaError.missingTables.includes('automation_runs'));
+}
+
+// Gemini embedding retries transient 429/5xx instead of failing immediately.
+eq(isRetryableEmbeddingStatus(429),true);
+eq(isRetryableEmbeddingStatus(503),true);
+eq(isRetryableEmbeddingStatus(400),false);
+
+{
+  const previousFetch=globalThis.fetch;
+  let embeddingCalls=0;
+  globalThis.fetch=async ()=>{
+    embeddingCalls++;
+    if(embeddingCalls===1){
+      return new Response(JSON.stringify({error:{message:'rate limited'}}),{
+        status:429,
+        headers:{'Content-Type':'application/json','Retry-After':'0'}
+      });
+    }
+    return new Response(JSON.stringify({
+      embedding:{values:Array(384).fill(0.001)}
+    }),{
+      status:200,
+      headers:{'Content-Type':'application/json'}
+    });
+  };
+  const values=await embedWithGemini({
+    GEMINI_API_KEY:'test',
+    GEMINI_EMBEDDING_MAX_ATTEMPTS:'2',
+    GEMINI_EMBEDDING_RETRY_BASE_MS:'50'
+  },'test');
+  eq(embeddingCalls,2);
+  eq(values.length,384);
+  globalThis.fetch=previousFetch;
 }
 
 res=await worker.fetch(new Request('https://x/health/faq'),{});
