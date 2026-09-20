@@ -1365,12 +1365,46 @@ async function runRagMaintenance(env, actorId = 'system-maintenance') {
       AND datetime(updated_at) < datetime('now','-24 hours')
   `).first();
 
+  const oldUsage = await db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM usage_events
+    WHERE datetime(occurred_at) < datetime('now','-180 days')
+  `).first();
+
+  const oldFeedback = await db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM feedback_events
+    WHERE datetime(occurred_at) < datetime('now','-180 days')
+  `).first();
+
+  await db.batch([
+    db.prepare(`
+      DELETE FROM usage_sources
+      WHERE event_id IN (
+        SELECT event_id
+        FROM usage_events
+        WHERE datetime(occurred_at) < datetime('now','-180 days')
+      )
+    `),
+    db.prepare(`
+      DELETE FROM feedback_events
+      WHERE datetime(occurred_at) < datetime('now','-180 days')
+    `),
+    db.prepare(`
+      DELETE FROM usage_events
+      WHERE datetime(occurred_at) < datetime('now','-180 days')
+    `)
+  ]);
+
   return {
     ok:true,
     jstDate:new Date(Date.now() + 9*60*60*1000).toISOString().slice(0,10),
     expiredCount:results.length,
     expired:results,
-    stalledJobCount:Number(stalled?.count || 0)
+    stalledJobCount:Number(stalled?.count || 0),
+    telemetryRetentionDays:180,
+    purgedUsageEvents:Number(oldUsage?.count || 0),
+    purgedFeedbackEvents:Number(oldFeedback?.count || 0)
   };
 }
 
