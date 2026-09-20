@@ -14,7 +14,14 @@ const MIME = {
   CSV: 'text/csv',
   JSON: 'application/json',
   HTML: 'text/html',
-  MARKDOWN: 'text/markdown'
+  MARKDOWN: 'text/markdown',
+  PDF: 'application/pdf',
+  WORD: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  WORD_LEGACY: 'application/msword',
+  EXCEL: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  EXCEL_LEGACY: 'application/vnd.ms-excel',
+  POWERPOINT: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  POWERPOINT_LEGACY: 'application/vnd.ms-powerpoint'
 };
 
 const MAX_TEXT_CHARS = 100000;
@@ -91,6 +98,7 @@ function getDriveFiles() {
       kind: support.label,
       supported: support.supported,
       note: support.note,
+      requiresOcrConfirmation: Boolean(support.requiresOcrConfirmation),
       updatedAt: formatDateTime_(file.getLastUpdated()),
       size: Number(file.getSize() || 0),
       url: file.getUrl()
@@ -261,11 +269,23 @@ function supportInfo_(mimeType) {
   map[MIME.JSON] = { supported: true, label: 'JSON', note: '' };
   map[MIME.HTML] = { supported: true, label: 'HTML', note: '' };
   map[MIME.MARKDOWN] = { supported: true, label: 'Markdown', note: '' };
+  map[MIME.WORD] = { supported: true, label: 'Word', note: '一時的にGoogleドキュメントへ変換して本文を抽出します。' };
+  map[MIME.WORD_LEGACY] = { supported: true, label: 'Word', note: '一時的にGoogleドキュメントへ変換して本文を抽出します。' };
+  map[MIME.EXCEL] = { supported: true, label: 'Excel', note: '一時的にGoogleスプレッドシートへ変換してシート単位で抽出します。' };
+  map[MIME.EXCEL_LEGACY] = { supported: true, label: 'Excel', note: '一時的にGoogleスプレッドシートへ変換してシート単位で抽出します。' };
+  map[MIME.POWERPOINT] = { supported: true, label: 'PowerPoint', note: '一時的にGoogleスライドへ変換してスライド単位で抽出します。' };
+  map[MIME.POWERPOINT_LEGACY] = { supported: true, label: 'PowerPoint', note: '一時的にGoogleスライドへ変換してスライド単位で抽出します。' };
+  map[MIME.PDF] = {
+    supported: true,
+    label: 'PDF',
+    note: 'Google DriveのPDF→Googleドキュメント変換/OCRを使用します。プレビュー前に管理者確認が必要です。',
+    requiresOcrConfirmation: true
+  };
 
   return map[mimeType] || {
     supported: false,
     label: mimeType || '不明',
-    note: 'PDF・Word・Excel・PowerPointの直接抽出はSTEP5-8後半で追加します。現在はGoogle形式へ変換した資料を登録してください。'
+    note: 'このファイル形式は現在の直接抽出対象外です。'
   };
 }
 
@@ -855,10 +875,10 @@ function getRagDocumentStatusStep5(documentId) {
   );
 }
 
-function previewDriveFileStep5(fileId) {
+function previewDriveFileStep5(fileId, options) {
   const file = DriveApp.getFileById(String(fileId || '').trim());
   const info = getStructuredFileInfoStep5_(file);
-  const extracted = extractStructuredFileStep5_(file, null);
+  const extracted = extractStructuredFileStep5_(file, null, options || {});
 
   const previewText = extracted.sections
     .map(function (section) {
@@ -897,7 +917,11 @@ function registerDriveFileStep5(options) {
   const info = getStructuredFileInfoStep5_(file);
   if (!info.supported) throw new Error(info.note || 'この形式はまだ直接登録できません。');
 
-  const extracted = extractStructuredFileStep5_(file, payload.selectedUnits || null);
+  const extracted = extractStructuredFileStep5_(
+    file,
+    payload.selectedUnits || null,
+    { allowPdfOcr: payload.allowPdfOcr === true }
+  );
   if (!extracted.sections.length || !extracted.extractedCharCount) {
     throw new Error('資料本文を取得できませんでした。');
   }
@@ -1027,55 +1051,25 @@ function continueRagRegistrationStep5(documentId) {
 }
 
 function getStructuredFileInfoStep5_(file) {
-  const mimeType = file.getMimeType();
-  const supportedMap = {};
-  supportedMap[MIME.GOOGLE_DOC] = 'Googleドキュメント';
-  supportedMap[MIME.GOOGLE_SHEET] = 'Googleスプレッドシート';
-  supportedMap[MIME.GOOGLE_SLIDES] = 'Googleスライド';
-  supportedMap[MIME.TEXT] = 'テキスト';
-  supportedMap[MIME.CSV] = 'CSV';
-  supportedMap[MIME.JSON] = 'JSON';
-  supportedMap[MIME.HTML] = 'HTML';
-  supportedMap[MIME.MARKDOWN] = 'Markdown';
-
-  if (supportedMap[mimeType]) {
-    return {
-      supported: true,
-      kind: supportedMap[mimeType],
-      note: ''
-    };
-  }
-
-  const officeMap = {
-    'application/pdf': 'PDF',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
-    'application/msword': 'Word',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
-    'application/vnd.ms-excel': 'Excel',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint',
-    'application/vnd.ms-powerpoint': 'PowerPoint'
-  };
-
-  if (officeMap[mimeType]) {
-    return {
-      supported: false,
-      kind: officeMap[mimeType],
-      note: officeMap[mimeType] + 'の直接抽出はSTEP5-8後半で追加します。現在はGoogle形式へ変換した資料を登録してください。'
-    };
-  }
-
+  const info = supportInfo_(file.getMimeType());
   return {
-    supported: false,
-    kind: mimeType || '不明',
-    note: 'このファイル形式は現在の直接抽出対象外です。'
+    supported: Boolean(info.supported),
+    kind: info.label || file.getMimeType() || '不明',
+    note: info.note || '',
+    requiresOcrConfirmation: Boolean(info.requiresOcrConfirmation)
   };
 }
 
-function extractStructuredFileStep5_(file, selectedUnits) {
+function extractStructuredFileStep5_(file, selectedUnits, options) {
   const mimeType = file.getMimeType();
   const selected = Array.isArray(selectedUnits)
     ? selectedUnits.map(function (v) { return String(v); })
     : null;
+  const opts = options || {};
+
+  if (isConvertibleBinaryStep5_(mimeType)) {
+    return extractConvertedBinaryStep5_(file, selected, opts);
+  }
 
   let sections = [];
   let units = [];
@@ -1126,6 +1120,126 @@ function extractStructuredFileStep5_(file, selectedUnits) {
       return sum + section.text.length;
     }, 0)
   };
+}
+
+function isConvertibleBinaryStep5_(mimeType) {
+  return [
+    MIME.PDF,
+    MIME.WORD,
+    MIME.WORD_LEGACY,
+    MIME.EXCEL,
+    MIME.EXCEL_LEGACY,
+    MIME.POWERPOINT,
+    MIME.POWERPOINT_LEGACY
+  ].indexOf(mimeType) >= 0;
+}
+
+function conversionTargetMimeStep5_(mimeType) {
+  if (mimeType === MIME.WORD || mimeType === MIME.WORD_LEGACY || mimeType === MIME.PDF) {
+    return MIME.GOOGLE_DOC;
+  }
+  if (mimeType === MIME.EXCEL || mimeType === MIME.EXCEL_LEGACY) {
+    return MIME.GOOGLE_SHEET;
+  }
+  if (mimeType === MIME.POWERPOINT || mimeType === MIME.POWERPOINT_LEGACY) {
+    return MIME.GOOGLE_SLIDES;
+  }
+  return '';
+}
+
+function extractConvertedBinaryStep5_(file, selected, options) {
+  const mimeType = file.getMimeType();
+  const isPdf = mimeType === MIME.PDF;
+  if (isPdf && options.allowPdfOcr !== true) {
+    throw new Error(
+      'PDFはGoogle Driveの変換/OCRを使用して本文を抽出します。' +
+      '管理画面で「PDF変換/OCRを許可」を確認してからプレビューしてください。'
+    );
+  }
+
+  const targetMime = conversionTargetMimeStep5_(mimeType);
+  if (!targetMime) throw new Error('このファイル形式は変換できません。');
+
+  const tempName = '__komu_ai_temp__' + new Date().getTime() + '_' + file.getName();
+  let temp = null;
+
+  try {
+    const params = {
+      fields: 'id,name,mimeType',
+      supportsAllDrives: true
+    };
+    if (isPdf) params.ocrLanguage = 'ja';
+
+    temp = Drive.Files.create(
+      {
+        name: tempName,
+        mimeType: targetMime
+      },
+      file.getBlob(),
+      params
+    );
+
+    if (!temp || !temp.id) {
+      throw new Error('Google Drive変換後の一時ファイルIDを取得できませんでした。');
+    }
+
+    let result = null;
+    if (targetMime === MIME.GOOGLE_DOC) {
+      const sections = extractGoogleDocSectionsStep5_(temp.id);
+      result = {
+        sections: sections,
+        units: [{ id: 'document', label: isPdf ? 'PDF変換/OCR全文' : '文書全体', selected: true }],
+        sheetCount: 0,
+        slideCount: 0
+      };
+    } else if (targetMime === MIME.GOOGLE_SHEET) {
+      result = extractSpreadsheetSectionsStep5_(temp.id, selected);
+    } else if (targetMime === MIME.GOOGLE_SLIDES) {
+      result = extractSlidesSectionsStep5_(temp.id, selected);
+    }
+
+    const sections = (result && result.sections ? result.sections : [])
+      .map(function (section) {
+        return {
+          pageFrom: section.pageFrom || null,
+          pageTo: section.pageTo || null,
+          sheetName: section.sheetName || '',
+          slideNo: section.slideNo || null,
+          headingPath: clean_(section.headingPath, 500),
+          text: normalizeExtractedTextStep5_(section.text)
+        };
+      })
+      .filter(function (section) { return Boolean(section.text); });
+
+    const extractedCharCount = sections.reduce(function (sum, section) {
+      return sum + section.text.length;
+    }, 0);
+
+    if (isPdf && extractedCharCount < 20) {
+      throw new Error(
+        'PDFから十分な文字を取得できませんでした。' +
+        '画像品質や原稿状態を確認し、必要なら別のPDFで試してください。'
+      );
+    }
+
+    return {
+      sections: sections,
+      units: result && result.units ? result.units : [],
+      sheetCount: result && result.sheetCount ? result.sheetCount : 0,
+      slideCount: result && result.slideCount ? result.slideCount : 0,
+      extractedCharCount: extractedCharCount,
+      convertedFromMimeType: mimeType,
+      usedPdfOcr: isPdf
+    };
+  } finally {
+    if (temp && temp.id) {
+      try {
+        Drive.Files.remove(temp.id);
+      } catch (cleanupError) {
+        console.warn('一時変換ファイルの削除に失敗しました: ' + cleanupError.message);
+      }
+    }
+  }
 }
 
 function extractGoogleDocSectionsStep5_(fileId) {
