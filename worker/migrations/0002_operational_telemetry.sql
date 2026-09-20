@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS usage_sources (
   document_id TEXT NOT NULL,
   PRIMARY KEY (event_id, document_id),
   FOREIGN KEY (event_id) REFERENCES usage_events(event_id) ON DELETE CASCADE,
-  FOREIGN KEY (document_id) REFERENCES documents(document_id)
+  FOREIGN KEY (document_id) REFERENCES documents(document_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS feedback_events (
