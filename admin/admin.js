@@ -45,7 +45,9 @@
     runRagTest:$('#run-rag-test'),
     searchResultGrid:$('#search-result-grid'),
     testCandidates:$('#test-candidates'),
-    testEvidence:$('#test-evidence')
+    testEvidence:$('#test-evidence'),
+    auditBody:$('#audit-body'),
+    refreshAudit:$('#refresh-audit')
   };
 
   function showToast(message, ms=2600){
@@ -172,7 +174,10 @@
       state.authenticated=Boolean(data?.admin?.authenticated);
       state.admin=data?.admin||null;
       renderAuthState();
-      if(state.authenticated) loadDocuments();
+      if(state.authenticated) {
+        loadDocuments();
+        loadAuditLogs();
+      }
       return state.authenticated;
     }catch(err){
       console.warn('admin token verification failed',err);
@@ -252,6 +257,34 @@
     const d=new Date(value);
     if(Number.isNaN(d.getTime())) return escapeHtml(value);
     return d.toLocaleString('ja-JP');
+  }
+
+  async function loadAuditLogs(){
+    if(!state.authenticated) return;
+    try{
+      const data=await authJson('/admin/rag/audit?limit=100');
+      const logs=Array.isArray(data?.result?.logs)?data.result.logs:[];
+
+      if(nodes.auditBody){
+        nodes.auditBody.innerHTML=logs.map(log=>`
+          <tr>
+            <td>${formatDate(log.occurredAt)}</td>
+            <td><span class="status-pill">${escapeHtml(log.action||'—')}</span></td>
+            <td>
+              <strong>${escapeHtml(log.summary||'')}</strong>
+              <small>${escapeHtml(log.entityId||'')}</small>
+            </td>
+            <td>${escapeHtml(log.actorId||'—')}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="4">監査ログはありません。</td></tr>';
+      }
+    }catch(err){
+      console.error(err);
+      if(nodes.auditBody){
+        nodes.auditBody.innerHTML='<tr><td colspan="4">監査ログを取得できませんでした。</td></tr>';
+      }
+      showToast(err?.message||'監査ログを取得できませんでした。',3800);
+    }
   }
 
   async function loadDocuments(){
@@ -618,6 +651,7 @@
   nodes.nav.forEach(btn=>btn.addEventListener('click',()=>showView(btn.dataset.adminView)));
   nodes.refresh.forEach(btn=>btn.addEventListener('click',refreshAll));
   nodes.refreshDocuments?.addEventListener('click',loadDocuments);
+  nodes.refreshAudit?.addEventListener('click',loadAuditLogs);
   nodes.runRagTest?.addEventListener('click',runRagTest);
   nodes.registerAdminTest?.addEventListener('click',registerAdminSyntheticTest);
   nodes.cleanupAdminTest?.addEventListener('click',cleanupAdminSyntheticTest);
@@ -634,6 +668,7 @@
     state.admin=null;
     try{ window.google?.accounts?.id?.disableAutoSelect(); }catch{}
     if(nodes.documentsBody) nodes.documentsBody.innerHTML='';
+    if(nodes.auditBody) nodes.auditBody.innerHTML='<tr><td colspan="4">管理者ログイン後に表示します。</td></tr>';
     if(nodes.searchResultGrid) nodes.searchResultGrid.hidden=true;
     renderAuthState();
     renderGoogleButton();
