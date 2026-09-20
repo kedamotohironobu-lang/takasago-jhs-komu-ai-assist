@@ -26,7 +26,19 @@
     googleSignin:$('#google-signin'),
     signedUser:$('#signed-user'),
     signedUserName:$('#signed-user-name'),
-    signoutButton:$('#signout-button')
+    signoutButton:$('#signout-button'),
+    materialsAuthRequired:$('#materials-auth-required'),
+    materialsContent:$('#materials-content'),
+    documentsBody:$('#documents-body'),
+    documentsEmpty:$('#documents-empty'),
+    refreshDocuments:$('#refresh-documents'),
+    searchAuthRequired:$('#search-auth-required'),
+    searchContent:$('#search-content'),
+    ragTestQuery:$('#rag-test-query'),
+    runRagTest:$('#run-rag-test'),
+    searchResultGrid:$('#search-result-grid'),
+    testCandidates:$('#test-candidates'),
+    testEvidence:$('#test-evidence')
   };
 
   function showToast(message, ms=2600){
@@ -106,6 +118,14 @@
     return data;
   }
 
+  function renderProtectedViews(){
+    const unlocked=Boolean(state.authenticated);
+    if(nodes.materialsAuthRequired) nodes.materialsAuthRequired.hidden=unlocked;
+    if(nodes.materialsContent) nodes.materialsContent.hidden=!unlocked;
+    if(nodes.searchAuthRequired) nodes.searchAuthRequired.hidden=unlocked;
+    if(nodes.searchContent) nodes.searchContent.hidden=!unlocked;
+  }
+
   function renderAuthState(){
     if(state.authenticated && state.admin){
       if(nodes.authTitle) nodes.authTitle.textContent='管理者認証済み';
@@ -115,6 +135,7 @@
       if(nodes.googleSignin) nodes.googleSignin.hidden=true;
       if(nodes.signedUser) nodes.signedUser.hidden=false;
       if(nodes.signedUserName) nodes.signedUserName.textContent=state.admin.name || state.admin.email || '管理者';
+      renderProtectedViews();
       return;
     }
 
@@ -132,6 +153,7 @@
       if(nodes.authBadge) nodes.authBadge.textContent='🔒 認証設定待ち';
       if(nodes.googleSignin) nodes.googleSignin.hidden=true;
     }
+    renderProtectedViews();
   }
 
   async function verifyCurrentToken(){
@@ -141,6 +163,7 @@
       state.authenticated=Boolean(data?.admin?.authenticated);
       state.admin=data?.admin||null;
       renderAuthState();
+      if(state.authenticated) loadDocuments();
       return state.authenticated;
     }catch(err){
       console.warn('admin token verification failed',err);
@@ -203,6 +226,120 @@
     }catch(err){
       console.warn('admin auth config failed',err);
       renderAuthState();
+    }
+  }
+
+  function escapeHtml(value){
+    return String(value ?? '')
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+  }
+
+  function formatDate(value){
+    if(!value) return '—';
+    const d=new Date(value);
+    if(Number.isNaN(d.getTime())) return escapeHtml(value);
+    return d.toLocaleString('ja-JP');
+  }
+
+  async function loadDocuments(){
+    if(!state.authenticated) return;
+    try{
+      const data=await authJson('/admin/rag/documents');
+      const docs=Array.isArray(data?.result?.documents)?data.result.documents:[];
+      if(nodes.documentsBody){
+        nodes.documentsBody.innerHTML=docs.map(doc=>`
+          <tr>
+            <td>
+              <strong>${escapeHtml(doc.title || doc.fileName || '無題')}</strong>
+              <small>${escapeHtml(doc.sourceId || '')}</small>
+            </td>
+            <td>${escapeHtml(doc.categoryName || '—')}</td>
+            <td>${escapeHtml(doc.versionLabel || ('rev '+doc.revisionNo))}</td>
+            <td><span class="status-pill ${doc.status==='active'?'ok':''}">${escapeHtml(doc.status || '—')}</span></td>
+            <td>${escapeHtml(doc.approvalStatus || '—')}</td>
+            <td>${Number(doc.activeChunkCount||0).toLocaleString()}</td>
+            <td>${formatDate(doc.updatedAt)}</td>
+          </tr>
+        `).join('');
+      }
+      if(nodes.documentsEmpty) nodes.documentsEmpty.hidden=docs.length>0;
+    }catch(err){
+      console.error(err);
+      showToast(err?.message||'資料一覧を取得できませんでした。',3800);
+    }
+  }
+
+  function renderRagTest(result){
+    const diagnostics=result?.diagnostics||{};
+    const candidates=Array.isArray(diagnostics.fusedCandidates)?diagnostics.fusedCandidates:[];
+    const evidence=Array.isArray(result?.evidence)?result.evidence:[];
+
+    setText('test-has-evidence',result?.hasUsableEvidence?'あり':'なし');
+    setText('test-accepted-count',String(diagnostics?.gate?.acceptedCount??0));
+    setText('test-fts-error',diagnostics?.ftsError||'なし');
+
+    if(nodes.testCandidates){
+      nodes.testCandidates.innerHTML=candidates.slice(0,10).map(c=>`
+        <div class="candidate-card ${c.accepted?'is-accepted':''}">
+          <div class="candidate-top">
+            <strong>#${c.fusedRank} ${escapeHtml(c.title||c.chunkId)}</strong>
+            <span>${c.accepted?'採用':'除外'}</span>
+          </div>
+          <div class="candidate-meta">
+            Vector #${c.vectorRank ?? '—'} / ${c.vectorScore!=null?Number(c.vectorScore).toFixed(4):'—'}
+            ・ FTS #${c.ftsRank ?? '—'}
+            ・ RRF ${c.rrfScore!=null?Number(c.rrfScore).toFixed(5):'—'}
+          </div>
+          <div class="candidate-reason">${escapeHtml(c.gateReason||c.exclusionReason||'')}</div>
+        </div>
+      `).join('') || '<p class="empty-message">候補はありません。</p>';
+    }
+
+    if(nodes.testEvidence){
+      nodes.testEvidence.innerHTML=evidence.map(ev=>`
+        <div class="evidence-card">
+          <strong>${escapeHtml(ev.title||'資料')}</strong>
+          <span>${escapeHtml(ev.headingPath||'')}</span>
+          <p>${escapeHtml(ev.text||'')}</p>
+        </div>
+      `).join('') || '<p class="empty-message">採用された根拠はありません。</p>';
+    }
+
+    if(nodes.searchResultGrid) nodes.searchResultGrid.hidden=false;
+  }
+
+  async function runRagTest(){
+    if(!state.authenticated) return;
+    const query=String(nodes.ragTestQuery?.value||'').trim();
+    if(!query){
+      showToast('質問を入力してください。');
+      nodes.ragTestQuery?.focus();
+      return;
+    }
+
+    if(nodes.runRagTest){
+      nodes.runRagTest.disabled=true;
+      nodes.runRagTest.textContent='検索中…';
+    }
+
+    try{
+      const data=await authJson('/admin/rag/retrieval-test',{
+        method:'POST',
+        body:JSON.stringify({query,evidenceLimit:4})
+      });
+      renderRagTest(data?.result||{});
+    }catch(err){
+      console.error(err);
+      showToast(err?.message||'RAG検索テストに失敗しました。',4000);
+    }finally{
+      if(nodes.runRagTest){
+        nodes.runRagTest.disabled=false;
+        nodes.runRagTest.textContent='検索する';
+      }
     }
   }
 
@@ -296,12 +433,22 @@
 
   nodes.nav.forEach(btn=>btn.addEventListener('click',()=>showView(btn.dataset.adminView)));
   nodes.refresh.forEach(btn=>btn.addEventListener('click',refreshAll));
+  nodes.refreshDocuments?.addEventListener('click',loadDocuments);
+  nodes.runRagTest?.addEventListener('click',runRagTest);
+  nodes.ragTestQuery?.addEventListener('keydown',(event)=>{
+    if(event.key==='Enter'){
+      event.preventDefault();
+      runRagTest();
+    }
+  });
   nodes.signoutButton?.addEventListener('click',()=>{
     sessionStorage.removeItem('takasagoAdminIdToken');
     state.idToken='';
     state.authenticated=false;
     state.admin=null;
     try{ window.google?.accounts?.id?.disableAutoSelect(); }catch{}
+    if(nodes.documentsBody) nodes.documentsBody.innerHTML='';
+    if(nodes.searchResultGrid) nodes.searchResultGrid.hidden=true;
     renderAuthState();
     renderGoogleButton();
     showToast('ログアウトしました。');
