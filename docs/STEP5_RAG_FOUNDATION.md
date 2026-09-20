@@ -635,3 +635,62 @@ Evidence Gate
 ```
 
 Worker version: 5.9.0
+
+
+## STEP5-11 本番運用準備
+
+### 旧KV FAQの正式退役
+
+先生向けFAQは完全に新RAGへ切替済み。
+
+停止:
+- 旧KVによる公開FAQ検索
+- GET /admin/faq/sources
+- POST /admin/faq/source
+- POST /admin/faq/remove
+
+互換確認:
+- GET /health/faq
+  - mode: rag-v2
+  - legacyKv: retired
+  - publicLegacyRoutes: false
+
+FAQ_KV binding自体は削除せず、将来の小規模cache/status用途への再利用に備えて残す。
+
+### 職員認証
+
+管理者:
+- ADMIN_EMAILS
+
+先生向けFAQ:
+- ADMIN_EMAILSは自動的に利用可
+- STAFF_EMAILSで個別許可
+- STAFF_DOMAINSで管理されたGoogle Workspaceドメイン単位の許可
+
+STAFF_DOMAINSではID tokenの hd とメールドメインが一致することもWorker側で確認する。
+
+### Production Readiness
+
+GET /health/production-readiness
+
+判定:
+- D1 schema ready
+- Vectorize ready
+- Evidence Gate enabled
+- AI provider >= 1
+- Google admin auth ready
+- staff FAQ pilot auth ready
+- approved active documents >= 1
+- active ready chunks >= 1
+- legacy KV public routes retired
+
+pilotReady:
+- ADMIN_EMAILSの管理者による試験運用が可能
+
+schoolwideReady:
+- pilotReady
+- STAFF_EMAILS または STAFF_DOMAINS が設定済み
+
+管理者ダッシュボード「システム状態」に本番運用準備チェックを表示する。
+
+Worker version: 5.10.0
