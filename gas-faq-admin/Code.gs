@@ -1098,7 +1098,9 @@ function checkAndNotifyStep6_() {
   }
 
   return {
-    ok: mail.ok !== false,
+    ok:
+      mail.ok !== false &&
+      !(hasIssues && notificationStatus === 'recipient_missing'),
     notificationStatus: notificationStatus,
     hasIssues: hasIssues,
     recipients: {
