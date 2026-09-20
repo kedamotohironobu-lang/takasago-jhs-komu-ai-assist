@@ -810,6 +810,40 @@ function runRagAnswerGateStep5() {
 const STEP5_LAST_DOCUMENT_PROPERTY = 'STEP5_LAST_DOCUMENT_ID';
 const STEP5_MAX_INDEX_BATCHES_PER_RUN = 8;
 
+function checkDriveConversionStep5() {
+  try {
+    const about = Drive.About.get({ fields: 'importFormats' });
+    const formats = about && about.importFormats ? about.importFormats : {};
+
+    return {
+      ok: true,
+      configured: true,
+      word: Boolean(
+        formats[MIME.WORD] &&
+        formats[MIME.WORD].indexOf(MIME.GOOGLE_DOC) >= 0
+      ),
+      excel: Boolean(
+        formats[MIME.EXCEL] &&
+        formats[MIME.EXCEL].indexOf(MIME.GOOGLE_SHEET) >= 0
+      ),
+      powerpoint: Boolean(
+        formats[MIME.POWERPOINT] &&
+        formats[MIME.POWERPOINT].indexOf(MIME.GOOGLE_SLIDES) >= 0
+      ),
+      pdf: Boolean(
+        formats[MIME.PDF] &&
+        formats[MIME.PDF].indexOf(MIME.GOOGLE_DOC) >= 0
+      )
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      configured: false,
+      error: String(e && e.message ? e.message : e)
+    };
+  }
+}
+
 function getRagAdminStateStep5() {
   const props = PropertiesService.getScriptProperties();
   const folderId = String(props.getProperty(PROP.FAQ_FOLDER_ID) || '').trim();
@@ -846,6 +880,7 @@ function getRagAdminStateStep5() {
     folderName: folderName,
     folderError: folderError,
     hasAdminToken: Boolean(String(props.getProperty(PROP.FAQ_ADMIN_TOKEN) || '').trim()),
+    driveConversion: checkDriveConversionStep5(),
     health: health
   };
 }
