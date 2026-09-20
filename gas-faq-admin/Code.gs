@@ -2079,8 +2079,9 @@ function extractConvertedBinaryStep5_(file, selected, options) {
 }
 
 /**
- * STEP7: Googleドキュメント本文プレビュー権限の再認証確認用。
- * FAQフォルダ内の最初のGoogleドキュメントを読み取り、DocumentApp権限が有効か確認します。
+ * STEP7: Googleドキュメント本文プレビュー接続確認用。
+ * DocumentApp.openById() は使用せず、既存のDrive読み取り権限で
+ * Drive APIのexportを使って本文を取得します。
  * 文書内容は変更しません。
  */
 function authorizeDocumentPreviewStep7() {
@@ -2088,80 +2089,129 @@ function authorizeDocumentPreviewStep7() {
   const files = folder.getFilesByType(MIME.GOOGLE_DOC);
 
   if (!files.hasNext()) {
-    throw new Error('FAQ資料フォルダ内にGoogleドキュメントがありません。STEP7動作確認用資料を置いてから実行してください。');
+    throw new Error(
+      'FAQ資料フォルダ内にGoogleドキュメントがありません。' +
+      'STEP7動作確認用資料を置いてから実行してください。'
+    );
   }
 
   const file = files.next();
-  const doc = DocumentApp.openById(file.getId());
+  const sections = extractGoogleDocSectionsStep5_(file.getId());
 
   return {
     ok: true,
     fileId: file.getId(),
     fileName: file.getName(),
-    documentName: doc.getName()
+    sectionCount: sections.length,
+    extractedCharCount: sections.reduce(function (sum, section) {
+      return sum + String(section.text || '').length;
+    }, 0)
   };
 }
 
+function exportGoogleDocTextStep7_(fileId) {
+  const base =
+    'https://www.googleapis.com/drive/v3/files/' +
+    encodeURIComponent(fileId) +
+    '/export?mimeType=';
+
+  const token = ScriptApp.getOAuthToken();
+
+  function fetchExport_(mimeType) {
+    const response = UrlFetchApp.fetch(base + encodeURIComponent(mimeType), {
+      method: 'get',
+      headers: {
+        Authorization: 'Bearer ' + token
+      },
+      muteHttpExceptions: true
+    });
+
+    const status = response.getResponseCode();
+    if (status >= 200 && status < 300) {
+      return {
+        ok: true,
+        mimeType: mimeType,
+        text: response.getContentText('UTF-8')
+      };
+    }
+
+    return {
+      ok: false,
+      status: status,
+      body: response.getContentText()
+    };
+  }
+
+  // Markdownは見出し構造を保ちやすいため最優先。
+  const markdown = fetchExport_('text/markdown');
+  if (markdown.ok && String(markdown.text || '').trim()) {
+    return markdown;
+  }
+
+  // 万一Markdown exportが利用できない環境ではプレーンテキストへフォールバック。
+  const plain = fetchExport_('text/plain');
+  if (plain.ok && String(plain.text || '').trim()) {
+    return plain;
+  }
+
+  throw new Error(
+    'Googleドキュメント本文をDrive APIから取得できませんでした。' +
+    ' Markdown HTTP ' + (markdown.status || '-') +
+    ' / Text HTTP ' + (plain.status || '-')
+  );
+}
+
 function extractGoogleDocSectionsStep5_(fileId) {
-  const doc = DocumentApp.openById(fileId);
-  const body = doc.getBody();
+  const exported = exportGoogleDocTextStep7_(fileId);
+  const raw = String(exported.text || '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+
+  if (!raw) return [];
+
+  // プレーンテキストへフォールバックした場合は文書全体を1セクションとして扱う。
+  if (exported.mimeType !== 'text/markdown') {
+    return [{ headingPath: '本文', text: raw }];
+  }
+
+  const lines = raw.split('\n');
   const sections = [];
-  let headingPath = [];
+  const headingPath = [];
   let buffer = [];
 
-  function flush() {
-    const text = buffer.join('\n\n').trim();
+  function flush_() {
+    const text = buffer.join('\n').trim();
     if (text) {
       sections.push({
-        headingPath: headingPath.filter(Boolean).length ? headingPath.filter(Boolean).join(' > ') : '本文',
+        headingPath: headingPath.filter(Boolean).length
+          ? headingPath.filter(Boolean).join(' > ')
+          : '本文',
         text: text
       });
     }
     buffer = [];
   }
 
-  for (let i = 0; i < body.getNumChildren(); i++) {
-    const child = body.getChild(i);
-    const type = child.getType();
-
-    if (type === DocumentApp.ElementType.PARAGRAPH) {
-      const p = child.asParagraph();
-      const text = String(p.getText() || '').trim();
-      if (!text) continue;
-
-      const level = paragraphHeadingLevelStep5_(p.getHeading());
-      if (level > 0) {
-        flush();
-        headingPath = headingPath.slice(0, level - 1);
-        headingPath[level - 1] = text;
-      } else {
-        buffer.push(text);
-      }
-    } else if (type === DocumentApp.ElementType.LIST_ITEM) {
-      const text = String(child.asListItem().getText() || '').trim();
-      if (text) buffer.push('・' + text);
-    } else if (type === DocumentApp.ElementType.TABLE) {
-      const table = child.asTable();
-      const rows = [];
-      for (let r = 0; r < table.getNumRows(); r++) {
-        const row = table.getRow(r);
-        const cells = [];
-        for (let k = 0; k < row.getNumCells(); k++) {
-          cells.push(String(row.getCell(k).getText() || '').trim());
-        }
-        const line = cells.join('\t').trim();
-        if (line) rows.push(line);
-      }
-      if (rows.length) buffer.push(rows.join('\n'));
+  lines.forEach(function (line) {
+    const heading = String(line || '').match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (heading) {
+      flush_();
+      const level = heading[1].length;
+      const title = String(heading[2] || '').trim();
+      headingPath.length = level;
+      headingPath[level - 1] = title;
+      return;
     }
-  }
 
-  flush();
+    buffer.push(String(line || ''));
+  });
+
+  flush_();
 
   if (!sections.length) {
-    const text = String(body.getText() || '').trim();
-    if (text) sections.push({ headingPath: '本文', text: text });
+    sections.push({ headingPath: '本文', text: raw });
   }
+
   return sections;
 }
 
