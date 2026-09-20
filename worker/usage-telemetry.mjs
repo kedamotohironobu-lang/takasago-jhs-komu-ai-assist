@@ -71,6 +71,21 @@ CREATE INDEX IF NOT EXISTS idx_improvement_actions_status
   ON improvement_actions(status,updated_at);
 CREATE INDEX IF NOT EXISTS idx_improvement_actions_document
   ON improvement_actions(document_id,status);
+CREATE TABLE IF NOT EXISTS automation_runs (
+  run_id TEXT PRIMARY KEY,
+  run_type TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('ok','partial','error')),
+  report_month TEXT,
+  report_saved INTEGER NOT NULL DEFAULT 0 CHECK (report_saved IN (0,1)),
+  notification_status TEXT,
+  operations_health TEXT,
+  improvement_action_count INTEGER NOT NULL DEFAULT 0,
+  improvement_watch_count INTEGER NOT NULL DEFAULT 0,
+  error_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_automation_runs_created
+  ON automation_runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_usage_events_occurred
   ON usage_events(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_usage_events_tool_status
@@ -623,6 +638,98 @@ async function getImprovementCandidates(env, days = 30) {
   };
 }
 
+async function recordAutomationRun(env, payload = {}) {
+  const db = requireDb(env);
+  await ensureOperationalSchema(env);
+
+  const runId = 'auto-' + crypto.randomUUID();
+  const status = ['ok','partial','error'].includes(String(payload.status || ''))
+    ? String(payload.status)
+    : 'error';
+
+  await db.prepare(`
+    INSERT INTO automation_runs (
+      run_id,run_type,status,report_month,report_saved,
+      notification_status,operations_health,
+      improvement_action_count,improvement_watch_count,error_count
+    )
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    runId,
+    String(payload.runType || 'daily').slice(0,80),
+    status,
+    String(payload.reportMonth || '').slice(0,20) || null,
+    payload.reportSaved ? 1 : 0,
+    String(payload.notificationStatus || '').slice(0,120) || null,
+    String(payload.operationsHealth || '').slice(0,40) || null,
+    Math.max(0,Number(payload.improvementActionCount || 0)),
+    Math.max(0,Number(payload.improvementWatchCount || 0)),
+    Math.max(0,Number(payload.errorCount || 0))
+  ).run();
+
+  await db.prepare(`
+    DELETE FROM automation_runs
+    WHERE datetime(created_at) < datetime('now','-365 days')
+  `).run();
+
+  return { ok:true, runId };
+}
+
+async function getAutomationStatus(env) {
+  const db = requireDb(env);
+  await ensureOperationalSchema(env);
+
+  const last = await db.prepare(`
+    SELECT
+      run_id,run_type,status,report_month,report_saved,
+      notification_status,operations_health,
+      improvement_action_count,improvement_watch_count,error_count,created_at
+    FROM automation_runs
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).first();
+
+  const recent = await db.prepare(`
+    SELECT
+      run_id,status,report_month,report_saved,notification_status,
+      operations_health,improvement_action_count,improvement_watch_count,
+      error_count,created_at
+    FROM automation_runs
+    ORDER BY created_at DESC
+    LIMIT 14
+  `).all();
+
+  return {
+    configured:true,
+    retentionDays:365,
+    last:last ? {
+      runId:String(last.run_id || ''),
+      runType:String(last.run_type || ''),
+      status:String(last.status || ''),
+      reportMonth:String(last.report_month || ''),
+      reportSaved:Boolean(last.report_saved),
+      notificationStatus:String(last.notification_status || ''),
+      operationsHealth:String(last.operations_health || ''),
+      improvementActionCount:Number(last.improvement_action_count || 0),
+      improvementWatchCount:Number(last.improvement_watch_count || 0),
+      errorCount:Number(last.error_count || 0),
+      createdAt:String(last.created_at || '')
+    } : null,
+    recent:(recent?.results || []).map(row => ({
+      runId:String(row.run_id || ''),
+      status:String(row.status || ''),
+      reportMonth:String(row.report_month || ''),
+      reportSaved:Boolean(row.report_saved),
+      notificationStatus:String(row.notification_status || ''),
+      operationsHealth:String(row.operations_health || ''),
+      improvementActionCount:Number(row.improvement_action_count || 0),
+      improvementWatchCount:Number(row.improvement_watch_count || 0),
+      errorCount:Number(row.error_count || 0),
+      createdAt:String(row.created_at || '')
+    }))
+  };
+}
+
 function normalizeMonth(value) {
   const raw = String(value || '').trim();
   const match = raw.match(/^(20\d{2}|21\d{2})-(0[1-9]|1[0-2])$/);
@@ -1056,5 +1163,7 @@ export {
   listImprovementActions,
   upsertImprovementAction,
   getMonthlyReport,
+  recordAutomationRun,
+  getAutomationStatus,
   getOperationsSummary
 };
