@@ -519,11 +519,13 @@
             if(deleted){
               action='<button class="row-action restore-document" type="button" data-document-id="'+
                 escapeHtml(doc.documentId)+'" data-document-title="'+escapeHtml(title)+'">復旧</button>';
-            }else if(['active','inactive','expired','source_missing','error'].includes(String(doc.status||''))){
+            }else if(String(doc.status||'')==='active'){
               action='<button class="row-action danger delete-document" type="button" data-document-id="'+
                 escapeHtml(doc.documentId)+'" data-document-title="'+escapeHtml(title)+'">検索から外す</button>';
             }else{
-              action='<span class="table-muted">処理中</span>';
+              action='<span class="table-muted">'+
+                (['expired','source_missing'].includes(String(doc.status||''))?'検索対象外':'処理・確認中')+
+                '</span>';
             }
           }
 
