@@ -1,7 +1,14 @@
 (() => {
   'use strict';
 
-  const state = { config:null, loading:false };
+  const state = {
+    config:null,
+    loading:false,
+    googleClientId:'',
+    idToken:sessionStorage.getItem('takasagoAdminIdToken') || '',
+    authenticated:false,
+    admin:null
+  };
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
@@ -12,7 +19,14 @@
     refresh:$$('[data-refresh]'),
     toast:$('#admin-toast'),
     overallDot:$('#overall-dot'),
-    overallLabel:$('#overall-label')
+    overallLabel:$('#overall-label'),
+    authTitle:$('#auth-title'),
+    authDescription:$('#auth-description'),
+    authBadge:$('#auth-badge'),
+    googleSignin:$('#google-signin'),
+    signedUser:$('#signed-user'),
+    signedUserName:$('#signed-user-name'),
+    signoutButton:$('#signout-button')
   };
 
   function showToast(message, ms=2600){
@@ -60,6 +74,136 @@
     const data=await res.json().catch(()=>({}));
     if(!res.ok || data?.ok===false) throw new Error(data?.error?.message||('HTTP '+res.status));
     return data;
+  }
+
+  async function getAuthConfig(){
+    const data=await getJson('/health/admin-auth');
+    const auth=data?.adminAuth||{};
+    state.googleClientId=String(auth.googleClientId||'');
+    return auth;
+  }
+
+  async function authJson(path,options={}){
+    const cfg=await loadConfig();
+    const base=String(cfg.workerBaseUrl||'').replace(/\/+$/,'');
+    if(!base) throw new Error('Worker URLが未設定です。');
+    if(!state.idToken) throw new Error('管理者ログインが必要です。');
+
+    const headers={
+      ...(options.headers||{}),
+      'Authorization':'Bearer '+state.idToken
+    };
+    if(options.body && !headers['Content-Type']) headers['Content-Type']='application/json';
+
+    const res=await fetch(base+path,{...options,headers,cache:'no-store'});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok || data?.ok===false){
+      const err=new Error(data?.error?.message||('HTTP '+res.status));
+      err.code=data?.error?.code||'ADMIN_API_ERROR';
+      err.status=res.status;
+      throw err;
+    }
+    return data;
+  }
+
+  function renderAuthState(){
+    if(state.authenticated && state.admin){
+      if(nodes.authTitle) nodes.authTitle.textContent='管理者認証済み';
+      if(nodes.authDescription) nodes.authDescription.textContent='GoogleアカウントをWorker側で検証し、管理者許可リストと照合しています。';
+      if(nodes.authBadge) nodes.authBadge.textContent='✓ 認証済み';
+      if(nodes.authBadge) nodes.authBadge.classList.add('is-authenticated');
+      if(nodes.googleSignin) nodes.googleSignin.hidden=true;
+      if(nodes.signedUser) nodes.signedUser.hidden=false;
+      if(nodes.signedUserName) nodes.signedUserName.textContent=state.admin.name || state.admin.email || '管理者';
+      return;
+    }
+
+    if(nodes.authBadge) nodes.authBadge.classList.remove('is-authenticated');
+    if(nodes.signedUser) nodes.signedUser.hidden=true;
+
+    if(state.googleClientId){
+      if(nodes.authTitle) nodes.authTitle.textContent='管理者ログイン';
+      if(nodes.authDescription) nodes.authDescription.textContent='許可されたGoogleアカウントでログインしてください。IDトークンはWorker側で検証します。';
+      if(nodes.authBadge) nodes.authBadge.textContent='🔒 未ログイン';
+      if(nodes.googleSignin) nodes.googleSignin.hidden=false;
+    }else{
+      if(nodes.authTitle) nodes.authTitle.textContent='管理操作は現在ロックしています';
+      if(nodes.authDescription) nodes.authDescription.textContent='Google OAuth Client IDと管理者メール許可リストをCloudflareへ設定するとログインを有効化できます。';
+      if(nodes.authBadge) nodes.authBadge.textContent='🔒 認証設定待ち';
+      if(nodes.googleSignin) nodes.googleSignin.hidden=true;
+    }
+  }
+
+  async function verifyCurrentToken(){
+    if(!state.idToken) return false;
+    try{
+      const data=await authJson('/admin/auth/me');
+      state.authenticated=Boolean(data?.admin?.authenticated);
+      state.admin=data?.admin||null;
+      renderAuthState();
+      return state.authenticated;
+    }catch(err){
+      console.warn('admin token verification failed',err);
+      sessionStorage.removeItem('takasagoAdminIdToken');
+      state.idToken='';
+      state.authenticated=false;
+      state.admin=null;
+      renderAuthState();
+      return false;
+    }
+  }
+
+  async function handleGoogleCredential(response){
+    const credential=String(response?.credential||'');
+    if(!credential) return;
+    state.idToken=credential;
+    sessionStorage.setItem('takasagoAdminIdToken',credential);
+    const ok=await verifyCurrentToken();
+    showToast(ok?'管理者としてログインしました。':'このアカウントでは管理できません。',3200);
+  }
+
+  function renderGoogleButton(){
+    if(!state.googleClientId || !window.google?.accounts?.id || !nodes.googleSignin) return false;
+    nodes.googleSignin.innerHTML='';
+    window.google.accounts.id.initialize({
+      client_id:state.googleClientId,
+      callback:handleGoogleCredential,
+      auto_select:false
+    });
+    window.google.accounts.id.renderButton(nodes.googleSignin,{
+      theme:'outline',
+      size:'large',
+      shape:'pill',
+      text:'signin_with',
+      locale:'ja',
+      width:240
+    });
+    return true;
+  }
+
+  async function initializeAdminAuth(){
+    try{
+      const auth=await getAuthConfig();
+      renderAuthState();
+
+      if(state.idToken){
+        await verifyCurrentToken();
+      }
+
+      if(!auth?.configured || !state.googleClientId){
+        renderAuthState();
+        return;
+      }
+
+      let tries=0;
+      const timer=setInterval(()=>{
+        tries++;
+        if(renderGoogleButton() || tries>=30) clearInterval(timer);
+      },200);
+    }catch(err){
+      console.warn('admin auth config failed',err);
+      renderAuthState();
+    }
   }
 
   function renderSummary(data){
@@ -152,6 +296,17 @@
 
   nodes.nav.forEach(btn=>btn.addEventListener('click',()=>showView(btn.dataset.adminView)));
   nodes.refresh.forEach(btn=>btn.addEventListener('click',refreshAll));
+  nodes.signoutButton?.addEventListener('click',()=>{
+    sessionStorage.removeItem('takasagoAdminIdToken');
+    state.idToken='';
+    state.authenticated=false;
+    state.admin=null;
+    try{ window.google?.accounts?.id?.disableAutoSelect(); }catch{}
+    renderAuthState();
+    renderGoogleButton();
+    showToast('ログアウトしました。');
+  });
 
+  initializeAdminAuth();
   refreshAll();
 })();
