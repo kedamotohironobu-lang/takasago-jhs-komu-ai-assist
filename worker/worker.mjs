@@ -142,10 +142,10 @@ async function getGoogleJwks() {
   return keys;
 }
 
-async function verifyGoogleAdminIdToken(token, env) {
+async function verifyGoogleIdToken(token, env) {
   const clientId = String(env?.GOOGLE_OAUTH_CLIENT_ID || '').trim();
   if (!clientId) {
-    throw Object.assign(new Error('Google管理者認証が未設定です。'), { code:'GOOGLE_ADMIN_AUTH_NOT_CONFIGURED', status:503 });
+    throw Object.assign(new Error('Google認証が未設定です。'), { code:'GOOGLE_AUTH_NOT_CONFIGURED', status:503 });
   }
 
   const parts = String(token || '').split('.');
@@ -157,20 +157,20 @@ async function verifyGoogleAdminIdToken(token, env) {
     throw Object.assign(new Error('ID token header invalid'), { code:'GOOGLE_ID_TOKEN_INVALID', status:401 });
   }
 
-  const keys = await getGoogleJwks();
-  const jwk = keys.find(k => String(k?.kid || '') === String(header.kid));
+  let keys = await getGoogleJwks();
+  let jwk = keys.find(k => String(k?.kid || '') === String(header.kid));
   if (!jwk) {
     googleJwksCache = { expiresAt:0, keys:[] };
-    const refreshed = await getGoogleJwks();
-    const retryJwk = refreshed.find(k => String(k?.kid || '') === String(header.kid));
-    if (!retryJwk) throw Object.assign(new Error('Google signing key not found'), { code:'GOOGLE_ID_TOKEN_KEY_NOT_FOUND', status:401 });
-    return verifyGoogleAdminIdToken(token, { ...env, __forcedJwk:retryJwk });
+    keys = await getGoogleJwks();
+    jwk = keys.find(k => String(k?.kid || '') === String(header.kid));
+  }
+  if (!jwk) {
+    throw Object.assign(new Error('Google signing key not found'), { code:'GOOGLE_ID_TOKEN_KEY_NOT_FOUND', status:401 });
   }
 
-  const selectedJwk = env?.__forcedJwk || jwk;
   const key = await crypto.subtle.importKey(
     'jwk',
-    selectedJwk,
+    jwk,
     { name:'RSASSA-PKCS1-v1_5', hash:'SHA-256' },
     false,
     ['verify']
@@ -207,21 +207,11 @@ async function verifyGoogleAdminIdToken(token, env) {
 
   const email = String(payload?.email || '').trim().toLowerCase();
   const emailVerified = payload?.email_verified === true || String(payload?.email_verified || '').toLowerCase() === 'true';
-  const authoritativeEmail = email.endsWith('@gmail.com') || Boolean(String(payload?.hd || '').trim());
+  const hd = String(payload?.hd || '').trim().toLowerCase();
+  const authoritativeEmail = email.endsWith('@gmail.com') || Boolean(hd);
+
   if (!email || !emailVerified || !authoritativeEmail) {
     throw Object.assign(new Error('Googleアカウントのメール確認に失敗しました。'), { code:'GOOGLE_EMAIL_NOT_AUTHORITATIVE', status:403 });
-  }
-
-  const allowedEmails = String(env?.ADMIN_EMAILS || '')
-    .split(',')
-    .map(v => v.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (!allowedEmails.length) {
-    throw Object.assign(new Error('管理者メール許可リストが未設定です。'), { code:'ADMIN_EMAILS_NOT_CONFIGURED', status:503 });
-  }
-  if (!allowedEmails.includes(email)) {
-    throw Object.assign(new Error('このGoogleアカウントには管理権限がありません。'), { code:'ADMIN_EMAIL_NOT_ALLOWED', status:403 });
   }
 
   return {
@@ -229,8 +219,77 @@ async function verifyGoogleAdminIdToken(token, env) {
     sub:String(payload?.sub || ''),
     email,
     name:String(payload?.name || ''),
-    hd:String(payload?.hd || '')
+    hd
   };
+}
+
+function parseCsvEnvList(value) {
+  return String(value || '')
+    .split(',')
+    .map(v => v.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+async function verifyGoogleAdminIdToken(token, env) {
+  const identity = await verifyGoogleIdToken(token, env);
+  const allowedEmails = parseCsvEnvList(env?.ADMIN_EMAILS);
+
+  if (!allowedEmails.length) {
+    throw Object.assign(new Error('管理者メール許可リストが未設定です。'), { code:'ADMIN_EMAILS_NOT_CONFIGURED', status:503 });
+  }
+  if (!allowedEmails.includes(identity.email)) {
+    throw Object.assign(new Error('このGoogleアカウントには管理権限がありません。'), { code:'ADMIN_EMAIL_NOT_ALLOWED', status:403 });
+  }
+  return identity;
+}
+
+async function verifyGoogleStaffIdToken(token, env) {
+  const identity = await verifyGoogleIdToken(token, env);
+
+  const adminEmails = parseCsvEnvList(env?.ADMIN_EMAILS);
+  const staffEmails = parseCsvEnvList(env?.STAFF_EMAILS);
+  const staffDomains = parseCsvEnvList(env?.STAFF_DOMAINS)
+    .map(v => v.replace(/^@/, ''));
+
+  const emailDomain = identity.email.includes('@')
+    ? identity.email.split('@').pop()
+    : '';
+
+  const allowedByEmail =
+    adminEmails.includes(identity.email) ||
+    staffEmails.includes(identity.email);
+
+  const allowedByDomain =
+    Boolean(emailDomain) &&
+    staffDomains.includes(emailDomain) &&
+    identity.hd === emailDomain;
+
+  if (!allowedByEmail && !allowedByDomain) {
+    throw Object.assign(new Error('このGoogleアカウントには校内FAQの利用権限がありません。'), { code:'STAFF_EMAIL_NOT_ALLOWED', status:403 });
+  }
+
+  return {
+    ...identity,
+    role:adminEmails.includes(identity.email) ? 'admin' : 'staff'
+  };
+}
+
+async function authenticateStaff(request, env) {
+  const auth = String(request.headers.get('Authorization') || '');
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  if (!match) return { ok:false, code:'STAFF_AUTH_REQUIRED', status:401, message:'校内FAQには職員ログインが必要です。' };
+
+  try {
+    const identity = await verifyGoogleStaffIdToken(match[1], env);
+    return { ok:true, ...identity };
+  } catch (e) {
+    return {
+      ok:false,
+      code:e?.code || 'STAFF_AUTH_FAILED',
+      status:e?.status || 401,
+      message:String(e?.message || '職員認証に失敗しました。')
+    };
+  }
 }
 
 async function authenticateAdmin(request, env) {
