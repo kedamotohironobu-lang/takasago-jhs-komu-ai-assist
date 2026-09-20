@@ -1,17 +1,10 @@
 import assert from 'node:assert/strict';
 import worker, { validatePayload, buildMessages, pickCorsOrigin } from './worker.mjs';
-import { faqStatus, retrieveFaq, validateSourcePayload, upsertFaqSource } from './faq-rag.mjs';
 import { applyEvidenceGate, buildEvidence } from './rag-retrieval.mjs';
 
 let n=0;
 const ok=(cond,msg='assert')=>{assert.ok(cond,msg);n++;};
 const eq=(a,b)=>{assert.equal(a,b);n++;};
-
-class MemoryKV {
-  constructor(){ this.map=new Map(); }
-  async get(key){ return this.map.has(key) ? this.map.get(key) : null; }
-  async put(key,value){ this.map.set(key,String(value)); }
-}
 
 const ids=['document','check','parent','newsletter','meeting','lesson','research','mail','rewrite','faq'];
 for (const id of ids) eq(validatePayload({toolId:id,input:'テスト'}).ok,true);
@@ -38,51 +31,38 @@ const reqDenied=new Request('https://api.example.com/api/generate',{headers:{Ori
 eq(pickCorsOrigin(reqDenied,{}),'');
 
 let res=await worker.fetch(new Request('https://x/health'),{});
-eq(res.status,200); eq((await res.json()).ok,true);
+eq(res.status,200);
+let health=await res.json();
+eq(health.ok,true);
+eq(health.version,'6.9.0');
 
 res=await worker.fetch(new Request('https://x/health/faq'),{});
 eq(res.status,200);
 let statusData=await res.json();
-eq(statusData.faq.configured,false);
+eq(statusData.ok,true);
+eq(statusData.faq.mode,'rag-v2');
+eq(statusData.faq.legacyKv,'retired');
+eq(statusData.faq.publicLegacyRoutes,false);
 
 res=await worker.fetch(new Request('https://x/api/generate',{
-  method:'POST',headers:{'Content-Type':'application/json'},
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
   body:JSON.stringify({toolId:'faq',input:'テスト手続きは？'})
 }),{});
-eq(res.status,503); eq((await res.json()).error.code,'FAQ_RAG_NOT_CONFIGURED');
+eq(res.status,401);
+eq((await res.json()).error.code,'STAFF_AUTH_REQUIRED');
 
-const kv=new MemoryKV();
-const bad=validateSourcePayload({sourceId:'x',title:'資料',text:'本文'});
-eq(bad.ok,false);
+res=await worker.fetch(new Request('https://x/admin/automation/status'),{});
+eq(res.status,401);
+eq((await res.json()).error.code,'ADMIN_AUTH_REQUIRED');
 
-const seeded=await upsertFaqSource({FAQ_KV:kv},{
-  sourceId:'test-rule-001',
-  title:'STEP4テスト用資料',
-  version:'test',
-  updatedAt:'2026-09-18',
-  approved:true,
-  chunks:[
-    {id:'c1',heading:'テスト手続き',page:'1',text:'テスト手続きAは、承認後に提出する。'},
-    {id:'c2',heading:'別項目',page:'2',text:'備品テストBは、所定の記録欄に記載する。'}
-  ]
-});
-eq(seeded.ok,true);
-
-const faqState=await faqStatus({FAQ_KV:kv});
-eq(faqState.configured,true); eq(faqState.activeSourceCount,1);
-
-const retrieved=await retrieveFaq({FAQ_KV:kv},'テスト手続きAはどうしますか？');
-ok(retrieved.hits.length>=1);
-eq(retrieved.hits[0].sourceId,'test-rule-001');
-
-res=await worker.fetch(new Request('https://x/api/generate',{
-  method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({toolId:'faq',input:'まったく関係のない宇宙飛行の規程は？'})
-}),{FAQ_KV:kv});
-eq(res.status,200);
-let noHit=await res.json();
-eq(noHit.provider,'retrieval-only');
-ok(noHit.text.includes('登録資料では確認できません'));
+res=await worker.fetch(new Request('https://x/admin/automation/run-record',{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({runType:'daily',status:'ok'})
+}),{});
+eq(res.status,401);
+eq((await res.json()).error.code,'ADMIN_AUTH_REQUIRED');
 
 res=await worker.fetch(new Request('https://x/api/generate',{
   method:'POST',headers:{'Content-Type':'application/json'},
@@ -94,37 +74,39 @@ const realFetch=globalThis.fetch;
 let calls=[];
 globalThis.fetch=async (url,init)=>{
   calls.push(String(url));
-  if (String(url).includes('cerebras')) return new Response(JSON.stringify({error:{message:'temporary'}}),{status:503,headers:{'Content-Type':'application/json'}});
-  if (String(url).includes('groq')) return new Response(JSON.stringify({choices:[{message:{content:'Groq fallback success'}}]}),{status:200,headers:{'Content-Type':'application/json'}});
-  throw new Error('unexpected');
+  if (String(url).includes('cerebras')) {
+    return new Response(JSON.stringify({error:{message:'temporary'}}),{
+      status:503,
+      headers:{'Content-Type':'application/json'}
+    });
+  }
+  if (String(url).includes('groq')) {
+    return new Response(JSON.stringify({
+      choices:[{message:{content:'Groq fallback success'}}]
+    }),{
+      status:200,
+      headers:{'Content-Type':'application/json'}
+    });
+  }
+  throw new Error('unexpected fetch: '+String(url));
 };
 
 res=await worker.fetch(new Request('https://x/api/generate',{
   method:'POST',headers:{'Content-Type':'application/json'},
   body:JSON.stringify({toolId:'parent',input:'テスト連絡'})
 }),{CEREBRAS_API_KEY:'x',GROQ_API_KEY:'y'});
+
 eq(res.status,200);
 let data=await res.json();
-eq(data.provider,'groq'); eq(data.text,'Groq fallback success');
-eq(calls.length,2); ok(calls[0].includes('cerebras')); ok(calls[1].includes('groq'));
-
-calls=[];
-res=await worker.fetch(new Request('https://x/api/generate',{
-  method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({toolId:'faq',input:'テスト手続きAはどうしますか？'})
-}),{FAQ_KV:kv,CEREBRAS_API_KEY:'x',GROQ_API_KEY:'y'});
-eq(res.status,200);
-data=await res.json();
 eq(data.provider,'groq');
-ok(Array.isArray(data.sources) && data.sources.length>=1);
-eq(data.sources[0].sourceId,'test-rule-001');
-ok(calls.some(x=>x.includes('cerebras')));
-ok(calls.some(x=>x.includes('groq')));
+eq(data.text,'Groq fallback success');
+eq(calls.length,2);
+ok(calls[0].includes('cerebras'));
+ok(calls[1].includes('groq'));
 
 globalThis.fetch=realFetch;
 
-console.log(`STEP4 unit/integration tests: ${n} assertions passed`);
-
+console.log(`STEP6-9 core unit/integration tests: ${n} assertions passed`);
 
 // STEP5-6 evidence gate tests
 {
