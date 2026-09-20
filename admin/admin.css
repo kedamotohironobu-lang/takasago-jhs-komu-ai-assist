@@ -718,3 +718,122 @@ button{cursor:pointer}
 @media(max-width:760px){
   .improvement-guide-grid{grid-template-columns:1fr}
 }
+
+
+/* STEP6-6 / STEP6-7: monthly report and improvement cycle */
+.month-selector{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:7px 10px;
+  border:1px solid #d8e4eb;
+  border-radius:10px;
+  background:#fff
+}
+.month-selector span{
+  color:#6a8293;
+  font-size:11px;
+  font-weight:850
+}
+.month-selector input{
+  border:0;
+  outline:0;
+  background:transparent;
+  color:#285875;
+  font-weight:850
+}
+.monthly-report-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  margin-bottom:16px
+}
+.monthly-report-header h3{
+  margin:2px 0 0;
+  color:#234f6d;
+  font-size:20px
+}
+.monthly-metrics{margin-bottom:16px}
+.improvement-cycle-panel{margin-top:16px}
+.improvement-cycle-summary{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  margin:12px 0 14px
+}
+.improvement-cycle-summary>div{
+  padding:11px 12px;
+  border:1px solid #e0e9ee;
+  border-radius:11px;
+  background:#f9fbfc
+}
+.improvement-cycle-summary span{
+  display:block;
+  color:#758b9a;
+  font-size:10px;
+  font-weight:850
+}
+.improvement-cycle-summary strong{
+  display:block;
+  margin-top:3px;
+  color:#285b78;
+  font-size:17px
+}
+.cycle-status-select{
+  min-width:112px;
+  border:1px solid #d4e0e7;
+  border-radius:9px;
+  background:#fff;
+  color:#365f79;
+  padding:7px 8px;
+  font-size:11px;
+  font-weight:800
+}
+.improvement-tracked{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:4px 8px;
+  border-radius:999px;
+  background:#e8f3f9;
+  color:#356b88;
+  font-size:10px;
+  font-weight:900
+}
+@media(max-width:760px){
+  .month-selector{
+    width:100%;
+    justify-content:space-between
+  }
+  .monthly-report-header{
+    align-items:flex-start;
+    flex-direction:column
+  }
+  .improvement-cycle-summary{
+    grid-template-columns:repeat(2,minmax(0,1fr))
+  }
+}
+@media print{
+  .admin-sidebar,
+  .auth-notice,
+  .section-actions,
+  .admin-topbar .topbar-status{
+    display:none!important
+  }
+  .admin-main{
+    margin:0!important;
+    padding:0!important
+  }
+  .admin-view{
+    display:none!important
+  }
+  .admin-view[data-view-panel="monthly"]{
+    display:block!important
+  }
+  .panel,
+  .metric-card,
+  .privacy-note{
+    break-inside:avoid
+  }
+}
