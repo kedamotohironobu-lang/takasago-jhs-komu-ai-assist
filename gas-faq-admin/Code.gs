@@ -975,6 +975,7 @@ function scanDriveSyncStep5() {
       fileId: file.fileId,
       sourceId: file.sourceId,
       name: file.name,
+      mimeType: file.mimeType,
       kind: file.kind,
       supported: file.supported,
       note: file.note,
