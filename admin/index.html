@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="admin.css?v=step5-12">
+  <link rel="stylesheet" href="admin.css?v=step5-13">
 </head>
 <body>
   <div class="admin-shell">
@@ -127,7 +127,7 @@
           <article class="panel wide">
             <div class="panel-head">
               <h3>現在のSTEP</h3>
-              <span class="panel-badge accent">STEP 5-12</span>
+              <span class="panel-badge accent">STEP 5-13</span>
             </div>
             <div class="step-flow">
               <div class="step-chip is-done">D1</div>
@@ -146,7 +146,9 @@
               <div class="step-arrow">→</div>
               <div class="step-chip is-done">本番準備</div>
               <div class="step-arrow">→</div>
-              <div class="step-chip is-current">Drive同期・版管理</div>
+              <div class="step-chip is-done">Drive同期・版管理</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-current">自動メンテナンス</div>
             </div>
           </article>
         </div>
@@ -322,13 +324,21 @@
       </section>
 
       <section class="admin-view" data-view-panel="system" hidden>
-        <div class="section-head"><div><p class="eyebrow">HEALTH</p><h2>システム状態</h2></div><button class="refresh-button" type="button" data-refresh>↻ 更新</button></div>
+        <div class="section-head">
+          <div><p class="eyebrow">HEALTH</p><h2>システム状態</h2></div>
+          <div class="section-actions">
+            <button class="refresh-button" type="button" id="run-maintenance">期限・状態を今すぐ点検</button>
+            <button class="refresh-button" type="button" data-refresh>↻ 更新</button>
+          </div>
+        </div>
         <div class="system-grid" id="system-grid">
           <article class="system-card"><span>Worker</span><strong id="health-worker">確認中</strong></article>
           <article class="system-card"><span>D1</span><strong id="health-d1">確認中</strong></article>
           <article class="system-card"><span>Vectorize</span><strong id="health-vector">確認中</strong></article>
           <article class="system-card"><span>Evidence Gate</span><strong id="health-gate">確認中</strong></article>
         </div>
+
+        <div class="maintenance-result" id="maintenance-result" hidden></div>
 
         <article class="panel readiness-panel">
           <div class="panel-head">
@@ -393,6 +403,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step5-12" defer></script>
+  <script src="admin.js?v=step5-13" defer></script>
 </body>
 </html>
