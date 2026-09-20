@@ -83,7 +83,7 @@
     acceptanceProgressText:$('#acceptance-progress-text'),
     acceptanceAutoChecks:$('#acceptance-auto-checks'),
     acceptanceReadinessChecks:$('#acceptance-readiness-checks'),
-    acceptanceManualChecks:$('[data-acceptance-manual]')
+    acceptanceManualChecks:$$('[data-acceptance-manual]')
   };
 
   function showToast(message, ms=2600){
