@@ -54,7 +54,10 @@
     driveSyncBody:$('#drive-sync-body'),
     refreshDriveStatus:$('#refresh-drive-status'),
     runMaintenance:$('#run-maintenance'),
-    maintenanceResult:$('#maintenance-result')
+    maintenanceResult:$('#maintenance-result'),
+    jobsBody:$('#jobs-body'),
+    refreshJobs:$('#refresh-jobs'),
+    downloadBackup:$('#download-backup')
   };
 
   function showToast(message, ms=2600){
@@ -186,6 +189,7 @@
       if(state.authenticated) {
         loadDocuments();
         loadAuditLogs();
+        loadJobs();
       }
       return state.authenticated;
     }catch(err){
@@ -315,6 +319,188 @@
     `).join('') || '<tr><td colspan="5">Drive由来の現行資料はありません。</td></tr>';
   }
 
+  async function completeDocumentActivation(documentId,label='資料'){
+    const id=String(documentId||'');
+    if(!id) throw new Error('documentIdがありません。');
+
+    let lastIndex=null;
+    for(let i=0;i<40;i++){
+      lastIndex=await authJson('/admin/rag/index-next',{
+        method:'POST',
+        body:JSON.stringify({documentId:id,limit:20})
+      });
+      const r=lastIndex?.result||{};
+      if(r.done===true || Number(r.remaining||0)===0) break;
+      await new Promise(resolve=>setTimeout(resolve,650));
+    }
+
+    const indexResult=lastIndex?.result||{};
+    if(!(indexResult.done===true || Number(indexResult.remaining||0)===0)){
+      throw new Error(label+'のEmbedding処理が1回で完了しませんでした。再試行してください。');
+    }
+
+    let lastError=null;
+    for(let attempt=0;attempt<7;attempt++){
+      try{
+        if(attempt>0) await new Promise(resolve=>setTimeout(resolve,4500));
+        const finalized=await authJson('/admin/rag/finalize',{
+          method:'POST',
+          body:JSON.stringify({documentId:id})
+        });
+        return finalized?.result||finalized;
+      }catch(err){
+        lastError=err;
+        const msg=String(err?.message||'');
+        const waiting=
+          msg.includes('Vectorizeへの反映待ち') ||
+          msg.includes('意味検索への反映');
+        if(!waiting) throw err;
+      }
+    }
+
+    throw lastError||new Error(label+'のVectorize反映確認が完了しませんでした。');
+  }
+
+  async function softDeleteDocument(documentId,title){
+    const typed=window.prompt(
+      '「'+title+'」をFAQ検索対象から外します。\nDrive原本とD1履歴は削除しません。\n実行する場合は「削除」と入力してください。'
+    );
+    if(typed!=='削除') return;
+
+    try{
+      await authJson('/admin/rag/document-delete',{
+        method:'POST',
+        body:JSON.stringify({documentId})
+      });
+      showToast('資料を論理削除しました。Drive原本とD1履歴は保持されています。',4200);
+      await Promise.allSettled([loadDocuments(),loadAuditLogs(),loadJobs(),refreshAll()]);
+    }catch(err){
+      console.error(err);
+      showToast(err?.message||'資料を削除できませんでした。',4200);
+    }
+  }
+
+  async function restoreDocument(documentId,title){
+    if(!window.confirm(
+      '「'+title+'」を復旧します。\n再EmbeddingしてFAQ検索対象へ戻します。よろしいですか？'
+    )) return;
+
+    try{
+      showToast('復旧処理を開始しました。');
+      const started=await authJson('/admin/rag/document-restore',{
+        method:'POST',
+        body:JSON.stringify({documentId})
+      });
+      const id=String(started?.result?.documentId||documentId);
+      await completeDocumentActivation(id,'資料復旧');
+      showToast('資料の復旧が完了しました。',4200);
+      await Promise.allSettled([loadDocuments(),loadAuditLogs(),loadJobs(),refreshAll()]);
+    }catch(err){
+      console.error(err);
+      showToast(err?.message||'資料を復旧できませんでした。',5000);
+      await Promise.allSettled([loadDocuments(),loadJobs()]);
+    }
+  }
+
+  async function loadJobs(){
+    if(!state.authenticated) return;
+    try{
+      const data=await authJson('/admin/rag/jobs?limit=100');
+      const jobs=Array.isArray(data?.result?.jobs)?data.result.jobs:[];
+
+      if(nodes.jobsBody){
+        nodes.jobsBody.innerHTML=jobs.map(job=>{
+          const retryable=job.status==='failed' || job.stalled===true;
+          const statusText=job.stalled && job.status!=='failed'
+            ? job.status+' / 停滞'
+            : job.status;
+          const detail=job.errorMessage
+            ? '<small>'+escapeHtml(job.errorMessage)+'</small>'
+            : '<small>'+escapeHtml(job.currentStep||'')+'</small>';
+
+          return `
+            <tr>
+              <td>
+                <strong>${escapeHtml(job.title||job.sourceId||job.documentId||'—')}</strong>
+                <small>${escapeHtml(job.jobId||'')}</small>
+              </td>
+              <td>${escapeHtml(job.jobType||'—')}</td>
+              <td><span class="status-pill ${job.status==='completed'?'ok':''}">${escapeHtml(statusText||'—')}</span>${detail}</td>
+              <td>${Number(job.progressPercent||0)}% / retry ${Number(job.retryCount||0)}</td>
+              <td>
+                ${retryable
+                  ? '<button class="row-action retry-job" type="button" data-job-id="'+escapeHtml(job.jobId)+'">再試行</button>'
+                  : '<span class="table-muted">—</span>'}
+              </td>
+            </tr>
+          `;
+        }).join('') || '<tr><td colspan="5">同期ジョブはありません。</td></tr>';
+      }
+    }catch(err){
+      console.error(err);
+      if(nodes.jobsBody){
+        nodes.jobsBody.innerHTML='<tr><td colspan="5">同期ジョブを取得できませんでした。</td></tr>';
+      }
+      showToast(err?.message||'同期ジョブを取得できませんでした。',3800);
+    }
+  }
+
+  async function retryJob(jobId){
+    if(!window.confirm('この同期ジョブを再試行しますか？')) return;
+
+    try{
+      const data=await authJson('/admin/rag/job-retry',{
+        method:'POST',
+        body:JSON.stringify({jobId})
+      });
+      const documentId=String(data?.result?.documentId||'');
+      if(!documentId) throw new Error('再試行対象のdocumentIdを取得できませんでした。');
+
+      showToast('再試行を開始しました。');
+      await completeDocumentActivation(documentId,'同期再試行');
+      showToast('同期ジョブの再試行が完了しました。',4200);
+      await Promise.allSettled([loadDocuments(),loadJobs(),loadAuditLogs(),refreshAll()]);
+    }catch(err){
+      console.error(err);
+      showToast(err?.message||'同期ジョブを再試行できませんでした。',5000);
+      await Promise.allSettled([loadJobs(),loadDocuments()]);
+    }
+  }
+
+  async function downloadBackupManifest(){
+    if(!state.authenticated) return;
+    try{
+      if(nodes.downloadBackup){
+        nodes.downloadBackup.disabled=true;
+        nodes.downloadBackup.textContent='作成中…';
+      }
+      const data=await authJson('/admin/rag/backup-manifest');
+      const manifest=data?.result||{};
+      const blob=new Blob(
+        [JSON.stringify(manifest,null,2)],
+        {type:'application/json;charset=utf-8'}
+      );
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      const stamp=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      a.href=url;
+      a.download='takasago-jhs-rag-backup-manifest-'+stamp+'.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      showToast('バックアップマニフェストを作成しました。',3600);
+    }catch(err){
+      console.error(err);
+      showToast(err?.message||'バックアップを作成できませんでした。',4200);
+    }finally{
+      if(nodes.downloadBackup){
+        nodes.downloadBackup.disabled=false;
+        nodes.downloadBackup.textContent='バックアップマニフェスト';
+      }
+    }
+  }
+
   async function loadDocuments(){
     if(!state.authenticated) return;
     try{
@@ -323,20 +509,40 @@
       state.documents=docs;
       renderDriveSyncStatus(docs);
       if(nodes.documentsBody){
-        nodes.documentsBody.innerHTML=docs.map(doc=>`
-          <tr>
-            <td>
-              <strong>${escapeHtml(doc.title || doc.fileName || '無題')}</strong>
-              <small>${escapeHtml(doc.sourceId || '')}</small>
-            </td>
-            <td>${escapeHtml(doc.categoryName || '—')}</td>
-            <td>${escapeHtml(doc.versionLabel || ('rev '+doc.revisionNo))}</td>
-            <td><span class="status-pill ${doc.status==='active'?'ok':''}">${escapeHtml(doc.status || '—')}</span></td>
-            <td>${escapeHtml(doc.approvalStatus || '—')}</td>
-            <td>${Number(doc.activeChunkCount||0).toLocaleString()}</td>
-            <td>${formatDate(doc.updatedAt)}</td>
-          </tr>
-        `).join('');
+        nodes.documentsBody.innerHTML=docs.map(doc=>{
+          const title=doc.title || doc.fileName || '無題';
+          const deleted=Boolean(doc.deletedAt);
+          const displayStatus=deleted?'削除済み':(doc.status||'—');
+
+          let action='<span class="table-muted">履歴保持</span>';
+          if(doc.isCurrent){
+            if(deleted){
+              action='<button class="row-action restore-document" type="button" data-document-id="'+
+                escapeHtml(doc.documentId)+'" data-document-title="'+escapeHtml(title)+'">復旧</button>';
+            }else if(['active','inactive','expired','source_missing','error'].includes(String(doc.status||''))){
+              action='<button class="row-action danger delete-document" type="button" data-document-id="'+
+                escapeHtml(doc.documentId)+'" data-document-title="'+escapeHtml(title)+'">検索から外す</button>';
+            }else{
+              action='<span class="table-muted">処理中</span>';
+            }
+          }
+
+          return `
+            <tr class="${deleted?'is-deleted-row':''}">
+              <td>
+                <strong>${escapeHtml(title)}</strong>
+                <small>${escapeHtml(doc.sourceId || '')}</small>
+              </td>
+              <td>${escapeHtml(doc.categoryName || '—')}</td>
+              <td>${escapeHtml(doc.versionLabel || ('rev '+doc.revisionNo))}</td>
+              <td><span class="status-pill ${!deleted&&doc.status==='active'?'ok':''}">${escapeHtml(displayStatus)}</span></td>
+              <td>${escapeHtml(doc.approvalStatus || '—')}</td>
+              <td>${Number(doc.activeChunkCount||0).toLocaleString()}</td>
+              <td>${formatDate(doc.updatedAt)}</td>
+              <td>${action}</td>
+            </tr>
+          `;
+        }).join('');
       }
       if(nodes.documentsEmpty) nodes.documentsEmpty.hidden=docs.length>0;
     }catch(err){
@@ -720,6 +926,32 @@
   nodes.refresh.forEach(btn=>btn.addEventListener('click',refreshAll));
   nodes.refreshDocuments?.addEventListener('click',loadDocuments);
   nodes.refreshAudit?.addEventListener('click',loadAuditLogs);
+  nodes.refreshJobs?.addEventListener('click',loadJobs);
+  nodes.downloadBackup?.addEventListener('click',downloadBackupManifest);
+
+  nodes.documentsBody?.addEventListener('click',(event)=>{
+    const deleteButton=event.target.closest('.delete-document');
+    if(deleteButton){
+      softDeleteDocument(
+        deleteButton.dataset.documentId,
+        deleteButton.dataset.documentTitle||'資料'
+      );
+      return;
+    }
+
+    const restoreButton=event.target.closest('.restore-document');
+    if(restoreButton){
+      restoreDocument(
+        restoreButton.dataset.documentId,
+        restoreButton.dataset.documentTitle||'資料'
+      );
+    }
+  });
+
+  nodes.jobsBody?.addEventListener('click',(event)=>{
+    const button=event.target.closest('.retry-job');
+    if(button) retryJob(button.dataset.jobId);
+  });
   nodes.refreshDriveStatus?.addEventListener('click',loadDocuments);
   nodes.runMaintenance?.addEventListener('click',runMaintenanceNowAdmin);
   nodes.runRagTest?.addEventListener('click',runRagTest);
@@ -739,6 +971,7 @@
     try{ window.google?.accounts?.id?.disableAutoSelect(); }catch{}
     if(nodes.documentsBody) nodes.documentsBody.innerHTML='';
     if(nodes.auditBody) nodes.auditBody.innerHTML='<tr><td colspan="4">管理者ログイン後に表示します。</td></tr>';
+    if(nodes.jobsBody) nodes.jobsBody.innerHTML='<tr><td colspan="5">管理者ログイン後に表示します。</td></tr>';
     if(nodes.driveSyncBody) nodes.driveSyncBody.innerHTML='<tr><td colspan="5">管理者ログイン後に表示します。</td></tr>';
     if(nodes.searchResultGrid) nodes.searchResultGrid.hidden=true;
     renderAuthState();
