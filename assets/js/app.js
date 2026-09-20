@@ -69,9 +69,9 @@
   const stageStrong = document.querySelector('.stage-card strong');
   const stageText = document.querySelector('.stage-card p');
   const footerStage = document.querySelector('.site-footer p');
-  if (stageStrong) stageStrong.textContent = '現在：STEP 6-7 月次レポート・改善サイクル';
+  if (stageStrong) stageStrong.textContent = '現在：STEP 6-9 月次自動保存・自動通知';
   if (stageText) stageText.textContent = '校内FAQはGoogle職員認証後、D1・Vectorize・FTS5・RRF・Evidence Gateを通った根拠だけで回答します。';
-  if (footerStage) footerStage.textContent = '高砂市立高砂中学校　校務AIアシスト — STEP 6-7 月次レポート・改善サイクル版';
+  if (footerStage) footerStage.textContent = '高砂市立高砂中学校　校務AIアシスト — STEP 6-9 月次自動保存・自動通知版';
 
   const tool = (id) => TOOLS[id] || TOOLS.parent;
 
