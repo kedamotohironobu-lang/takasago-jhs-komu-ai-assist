@@ -970,3 +970,65 @@ select:focus {
 
 /* STEP5-10: FAQ表示時は通常生成フォームを確実に隠す */
 .editor-form[hidden]{display:none!important}
+
+
+/* STEP6-2: FAQ feedback */
+.faq-feedback{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid #e3edf2
+}
+.faq-feedback-prompt{
+  width:100%;
+  color:#6a8192;
+  font-size:11px;
+  font-weight:800
+}
+.faq-feedback-button,
+.faq-feedback-reason{
+  border:1px solid #d7e4eb;
+  border-radius:999px;
+  background:#f8fbfd;
+  color:#3c647f;
+  padding:7px 10px;
+  font-size:11px;
+  font-weight:850;
+  cursor:pointer
+}
+.faq-feedback-button:hover,
+.faq-feedback-reason:hover{
+  background:#edf6fb
+}
+.faq-feedback-button:disabled,
+.faq-feedback-reason:disabled{
+  opacity:.55;
+  cursor:not-allowed
+}
+.faq-feedback-reasons{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  align-items:center;
+  width:100%
+}
+.faq-feedback-reasons>span{
+  width:100%;
+  color:#6a8192;
+  font-size:11px;
+  font-weight:800
+}
+.faq-feedback-done{
+  color:#297056;
+  font-size:11px;
+  font-weight:900
+}
+@media(max-width:720px){
+  .faq-feedback-button,
+  .faq-feedback-reason{
+    min-height:38px
+  }
+}
