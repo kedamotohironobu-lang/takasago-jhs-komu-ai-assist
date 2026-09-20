@@ -934,7 +934,9 @@ export default {
           googleClientId:clientId,
           adminFallbackEnabled:Boolean(adminCount),
           staffEmailCount,
-          staffDomainCount
+          staffDomainCount,
+          faqMode:'rag-v2',
+          legacyKvPublic:false
         }
       },200,origin || '*');
     }
