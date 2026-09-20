@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="admin.css?v=step6-3c">
+  <link rel="stylesheet" href="admin.css?v=step6-5">
 </head>
 <body>
   <div class="admin-shell">
@@ -27,6 +27,7 @@
         <button class="admin-nav-item" type="button" data-admin-view="search">🔎 RAG検索テスト</button>
         <button class="admin-nav-item" type="button" data-admin-view="acceptance">✅ 最終受入テスト</button>
         <button class="admin-nav-item" type="button" data-admin-view="usage">📈 利用状況</button>
+        <button class="admin-nav-item" type="button" data-admin-view="improvement">🛠 改善提案</button>
         <button class="admin-nav-item" type="button" data-admin-view="system">🩺 システム状態</button>
       </nav>
 
@@ -129,7 +130,7 @@
           <article class="panel wide">
             <div class="panel-head">
               <h3>現在のSTEP</h3>
-              <span class="panel-badge accent">STEP 6-3</span>
+              <span class="panel-badge accent">STEP 6-5</span>
             </div>
             <div class="step-flow">
               <div class="step-chip is-done">D1</div>
@@ -158,7 +159,11 @@
               <div class="step-arrow">→</div>
               <div class="step-chip is-done">利用品質</div>
               <div class="step-arrow">→</div>
-              <div class="step-chip is-current">運用監視</div>
+              <div class="step-chip is-done">運用監視</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-done">改善抽出</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-current">改善提案</div>
             </div>
           </article>
         </div>
@@ -530,6 +535,93 @@
         </div>
       </section>
 
+      <section class="admin-view" data-view-panel="improvement" hidden>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">IMPROVEMENT</p>
+            <h2>FAQ改善提案</h2>
+          </div>
+          <div class="section-actions">
+            <button class="refresh-button" type="button" id="refresh-improvement">↻ 改善候補を更新</button>
+            <button class="refresh-button" type="button" id="download-improvement-report" disabled>改善レポート保存</button>
+          </div>
+        </div>
+
+        <div class="auth-required-panel" id="improvement-auth-required">
+          <div class="locked-icon">🔒</div>
+          <h3>管理者ログインが必要です</h3>
+          <p>改善提案は匿名利用集計・定型評価・資料状態だけから作成します。</p>
+        </div>
+
+        <div id="improvement-content" hidden>
+          <article class="privacy-note">
+            <strong>質問本文を使わない改善提案</strong>
+            <p>質問本文・AI回答本文・利用者メール・IPは保存も分析もしません。資料の利用回数、定型評価、期限、同期状態、FAQ全体の根拠不足率だけを使います。</p>
+          </article>
+
+          <div class="metric-grid improvement-metrics">
+            <article class="metric-card">
+              <span class="metric-label">要対応</span>
+              <strong class="metric-value" id="improvement-action-count">—</strong>
+              <span class="metric-note">早めの確認を推奨</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">要確認</span>
+              <strong class="metric-value" id="improvement-watch-count">—</strong>
+              <span class="metric-note">更新・内容確認候補</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">未利用資料</span>
+              <strong class="metric-value" id="improvement-unused-count">—</strong>
+              <span class="metric-note">30日以上参照なし</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">FAQ根拠不足率</span>
+              <strong class="metric-value" id="improvement-insufficient-rate">—</strong>
+              <span class="metric-note">過去30日</span>
+            </article>
+          </div>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
+                <h3>改善候補</h3>
+                <p class="panel-description">AIによる自由判断ではなく、決め打ちルールで抽出した候補です。最終判断は管理者が行います。</p>
+              </div>
+              <span class="panel-badge" id="improvement-summary-badge">確認中</span>
+            </div>
+            <div id="improvement-list" class="improvement-list">
+              <p class="empty-message">改善候補を読み込んでいます。</p>
+            </div>
+          </article>
+
+          <article class="panel wide improvement-guide">
+            <div class="panel-head">
+              <h3>改善の進め方</h3>
+              <span class="panel-badge">安全側</span>
+            </div>
+            <div class="improvement-guide-grid">
+              <div>
+                <strong>根拠不足が多い</strong>
+                <p>Evidence Gateは緩めず、必要な承認資料が登録されているか、見出し・チャンク構造を確認します。</p>
+              </div>
+              <div>
+                <strong>根拠が違う</strong>
+                <p>旧版・類似資料・カテゴリ・重複資料を確認します。</p>
+              </div>
+              <div>
+                <strong>情報が古い</strong>
+                <p>Drive原本、新版、valid_until、current revisionを確認します。</p>
+              </div>
+              <div>
+                <strong>未利用資料</strong>
+                <p>不要とは断定せず、検索されやすい表現か、対象資料として必要かを確認します。</p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
       <section class="admin-view" data-view-panel="system" hidden>
         <div class="section-head">
           <div><p class="eyebrow">HEALTH</p><h2>システム状態</h2></div>
@@ -650,6 +742,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step6-3c" defer></script>
+  <script src="admin.js?v=step6-5" defer></script>
 </body>
 </html>
