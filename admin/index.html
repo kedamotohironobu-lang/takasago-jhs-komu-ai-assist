@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="admin.css?v=step5-14">
+  <link rel="stylesheet" href="admin.css?v=step6-1">
 </head>
 <body>
   <div class="admin-shell">
@@ -25,6 +25,7 @@
         <button class="admin-nav-item" type="button" data-admin-view="add">➕ 資料を追加</button>
         <button class="admin-nav-item" type="button" data-admin-view="drive">🔄 Drive同期</button>
         <button class="admin-nav-item" type="button" data-admin-view="search">🔎 RAG検索テスト</button>
+        <button class="admin-nav-item" type="button" data-admin-view="acceptance">✅ 最終受入テスト</button>
         <button class="admin-nav-item" type="button" data-admin-view="usage">📈 利用状況</button>
         <button class="admin-nav-item" type="button" data-admin-view="system">🩺 システム状態</button>
       </nav>
@@ -128,7 +129,7 @@
           <article class="panel wide">
             <div class="panel-head">
               <h3>現在のSTEP</h3>
-              <span class="panel-badge accent">STEP 5-14</span>
+              <span class="panel-badge accent">STEP 6-1</span>
             </div>
             <div class="step-flow">
               <div class="step-chip is-done">D1</div>
@@ -151,7 +152,9 @@
               <div class="step-arrow">→</div>
               <div class="step-chip is-done">自動メンテナンス</div>
               <div class="step-arrow">→</div>
-              <div class="step-chip is-current">運用・復旧</div>
+              <div class="step-chip is-done">運用・復旧</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-current">最終受入</div>
             </div>
           </article>
         </div>
@@ -312,6 +315,98 @@
         </div>
       </section>
 
+      <section class="admin-view" data-view-panel="acceptance" hidden>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">FINAL ACCEPTANCE</p>
+            <h2>STEP6-1 最終受入テスト</h2>
+          </div>
+          <div class="section-actions">
+            <button class="refresh-button" type="button" id="run-acceptance-suite">自動受入テストを実行</button>
+            <button class="refresh-button" type="button" id="download-acceptance-report" disabled>受入レポート保存</button>
+          </div>
+        </div>
+
+        <div class="auth-required-panel" id="acceptance-auth-required">
+          <div class="locked-icon">🔒</div>
+          <h3>管理者ログインが必要です</h3>
+          <p>最終受入テストはGoogle管理者認証後に実行できます。</p>
+        </div>
+
+        <div id="acceptance-content" hidden>
+          <article class="panel acceptance-overview">
+            <div class="panel-head">
+              <div>
+                <h3>本番公開判定</h3>
+                <p class="panel-description">自動テスト・本番データ条件・手動確認の3区分で判定します。</p>
+              </div>
+              <span class="acceptance-verdict" id="acceptance-verdict">未実行</span>
+            </div>
+            <div class="acceptance-summary-grid">
+              <div><span>自動受入テスト</span><strong id="acceptance-auto-summary">未実行</strong></div>
+              <div><span>本番データ条件</span><strong id="acceptance-readiness-summary">未確認</strong></div>
+              <div><span>手動確認</span><strong id="acceptance-manual-summary">0 / 7</strong></div>
+            </div>
+            <p class="acceptance-note" id="acceptance-note">すべての条件が揃うまで一般職員公開の最終判定は行いません。</p>
+          </article>
+
+          <article class="panel wide acceptance-panel">
+            <div class="panel-head">
+              <div>
+                <h3>① 自動受入テスト</h3>
+                <p class="panel-description">架空資料を使い、登録→検索→回答→根拠→拒否→削除→復旧→後片付けまで一周します。</p>
+              </div>
+              <span class="panel-badge" id="acceptance-auto-badge">未実行</span>
+            </div>
+            <div class="acceptance-progress" id="acceptance-progress" hidden>
+              <strong id="acceptance-progress-title">準備中</strong>
+              <p id="acceptance-progress-text"></p>
+            </div>
+            <div class="acceptance-check-list" id="acceptance-auto-checks">
+              <p class="empty-message">「自動受入テストを実行」を押してください。</p>
+            </div>
+          </article>
+
+          <article class="panel wide acceptance-panel">
+            <div class="panel-head">
+              <div>
+                <h3>② 本番データ条件</h3>
+                <p class="panel-description">テスト資料ではなく、実資料と一般職員認証が揃っているかを確認します。</p>
+              </div>
+              <span class="panel-badge" id="acceptance-readiness-badge">未確認</span>
+            </div>
+            <div class="acceptance-check-list" id="acceptance-readiness-checks"></div>
+          </article>
+
+          <article class="panel wide acceptance-panel">
+            <div class="panel-head">
+              <div>
+                <h3>③ 人が確認する実運用テスト</h3>
+                <p class="panel-description">実資料・実職員でしか確認できない項目です。確認後にチェックしてください。</p>
+              </div>
+              <span class="panel-badge" id="acceptance-manual-badge">0 / 7</span>
+            </div>
+            <div class="manual-check-list" id="acceptance-manual-checks">
+              <label><input type="checkbox" data-acceptance-manual="staff_login">一般職員（管理者以外）のGoogleアカウントでFAQへログインできた</label>
+              <label><input type="checkbox" data-acceptance-manual="real_positive">実資料の代表質問で内容どおりの回答と正しい根拠資料カードが表示された</label>
+              <label><input type="checkbox" data-acceptance-manual="followup">「それは誰に出しますか？」等の追質問で直前の先生の質問だけが補助文脈として使われた</label>
+              <label><input type="checkbox" data-acceptance-manual="real_negative">実資料にない質問で「登録資料では確認できません」となり、推測回答しなかった</label>
+              <label><input type="checkbox" data-acceptance-manual="revision">Drive原本更新→新版active/current→旧版inactiveの切替を確認した</label>
+              <label><input type="checkbox" data-acceptance-manual="maintenance">GASの日次メンテナンスを有効化し、「今すぐ実行」も正常完了した</label>
+              <label><input type="checkbox" data-acceptance-manual="backup">バックアップマニフェストJSONを実際に保存し、安全仕様を確認した</label>
+            </div>
+          </article>
+
+          <article class="panel wide acceptance-actions-panel">
+            <div>
+              <strong>受入結果の保存</strong>
+              <p>受入レポートはブラウザからJSON保存できます。すべての本番公開条件を満たした場合だけ、D1監査ログへ「合格」を記録できます。</p>
+            </div>
+            <button class="admin-primary" type="button" id="record-acceptance-result" disabled>合格結果を監査ログへ記録</button>
+          </article>
+        </div>
+      </section>
+
       <section class="admin-view" data-view-panel="usage" hidden>
         <div class="section-head"><div><p class="eyebrow">CAPACITY</p><h2>利用状況</h2></div><button class="refresh-button" type="button" data-refresh>↻ 更新</button></div>
         <div class="dashboard-grid">
@@ -447,6 +542,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step5-14" defer></script>
+  <script src="admin.js?v=step6-1" defer></script>
 </body>
 </html>
