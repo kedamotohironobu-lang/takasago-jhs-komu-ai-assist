@@ -740,6 +740,88 @@ async function markRagSourceMissing(env, sourceId, actorId = 'faq-admin') {
   };
 }
 
+async function runRagMaintenance(env, actorId = 'system-maintenance') {
+  const db = requireDb(env);
+  const vector = requireVector(env);
+
+  const expiredRows = await db.prepare(`
+    SELECT document_id,source_id,title
+    FROM documents
+    WHERE is_current=1
+      AND status='active'
+      AND approval_status='approved'
+      AND valid_until IS NOT NULL
+      AND TRIM(valid_until) <> ''
+      AND date(valid_until) < date('now','+9 hours')
+    ORDER BY valid_until ASC
+    LIMIT 500
+  `).all();
+
+  const expiredDocs = expiredRows?.results || [];
+  const results = [];
+
+  for (const doc of expiredDocs) {
+    const vectorRows = await db.prepare(
+      "SELECT vector_id FROM chunks WHERE document_id=? AND vector_id IS NOT NULL"
+    ).bind(doc.document_id).all();
+    const vectorIds = (vectorRows?.results || []).map(r => r.vector_id).filter(Boolean);
+
+    const logId = `log-${crypto.randomUUID()}`;
+    await db.batch([
+      db.prepare("DELETE FROM chunks_fts WHERE document_id=?").bind(doc.document_id),
+      db.prepare("UPDATE chunks SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE document_id=?").bind(doc.document_id),
+      db.prepare(`
+        UPDATE documents
+        SET status='expired',updated_at=CURRENT_TIMESTAMP
+        WHERE document_id=?
+      `).bind(doc.document_id),
+      db.prepare(`
+        INSERT INTO audit_logs (
+          log_id,occurred_at,actor_id,action,entity_type,entity_id,summary,metadata_json
+        )
+        VALUES (?,CURRENT_TIMESTAMP,?,'document_expired','document',?,?,?)
+      `).bind(
+        logId,actorId,doc.document_id,
+        `「${doc.title}」を有効期限切れとして検索対象から除外`,
+        JSON.stringify({ sourceId:doc.source_id, vectorCount:vectorIds.length })
+      )
+    ]);
+
+    const mutationIds = [];
+    for (let i = 0; i < vectorIds.length; i += 1000) {
+      try {
+        const mutation = await vector.deleteByIds(vectorIds.slice(i, i + 1000));
+        if (mutation?.mutationId) mutationIds.push(mutation.mutationId);
+      } catch {
+        // D1/FTSが正本。残存vectorはauthoritative filterでも除外される。
+      }
+    }
+
+    results.push({
+      documentId:String(doc.document_id || ''),
+      sourceId:String(doc.source_id || ''),
+      title:String(doc.title || ''),
+      removedVectors:vectorIds.length,
+      mutationIds
+    });
+  }
+
+  const stalled = await db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM sync_jobs
+    WHERE status IN ('queued','running','waiting_review')
+      AND datetime(updated_at) < datetime('now','-24 hours')
+  `).first();
+
+  return {
+    ok:true,
+    jstDate:new Date(Date.now() + 9*60*60*1000).toISOString().slice(0,10),
+    expiredCount:results.length,
+    expired:results,
+    stalledJobCount:Number(stalled?.count || 0)
+  };
+}
+
 async function cleanupRagTestDocument(env, documentId, actorId = 'faq-admin') {
   const db = requireDb(env);
   const vector = requireVector(env);
@@ -875,6 +957,7 @@ export {
   finalizeRagDocument,
   getRagSourceState,
   markRagSourceMissing,
+  runRagMaintenance,
   cleanupRagTestDocument,
   cleanupRagTestSource
 };
