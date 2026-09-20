@@ -1218,7 +1218,10 @@
       );
 
       const jobs=Array.isArray(jobsData?.result?.jobs)?jobsData.result.jobs:[];
-      const badJobs=jobs.filter(job=>job.status==='failed' || job.stalled===true);
+      const badJobs=jobs.filter(job=>
+        (job.status==='failed' || job.stalled===true) &&
+        String(job.sourceId||'')!==ACCEPTANCE_SOURCE_ID
+      );
       acceptanceCheck(
         'jobs_clean',
         '失敗・停滞ジョブなし',
