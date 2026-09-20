@@ -28,10 +28,12 @@ import {
   listImprovementActions,
   upsertImprovementAction,
   getMonthlyReport,
+  recordAutomationRun,
+  getAutomationStatus,
   getOperationsSummary
 } from './usage-telemetry.mjs';
 
-const WORKER_VERSION = '6.7.0';
+const WORKER_VERSION = '6.9.0';
 
 const COMMON_SYSTEM_PROMPT = `あなたは中学校教職員の校務を支援する文章作成アシスタントです。日本語で、明確で丁寧な、すぐに編集して使える案を作ります。
 提供された事実と提案を区別してください。氏名・役職・組織名・日付・時刻・金額・期限・連絡先を推測して補わないでください。未記載の必要事項は【要確認：項目名】としてください。年が示されていない日付には曜日を付けないでください。入力にない場所・連絡方法・締切・担当者等を「未定」と断定せず、【要確認：項目名】として扱ってください。相対日付を勝手に絶対日付へ変換しないでください。
@@ -1592,6 +1594,46 @@ export default {
         return json({ok:true,result},200,origin || '*');
       } catch (e) {
         return json({ok:false,error:{code:e?.code || 'USAGE_SUMMARY_FAILED',message:String(e?.message || '利用状況を取得できませんでした。')}},e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/admin/automation/status') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+      try {
+        const result = await getAutomationStatus(env);
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({
+          ok:false,
+          error:{
+            code:e?.code || 'AUTOMATION_STATUS_FAILED',
+            message:String(e?.message || '自動運用状態を取得できませんでした。')
+          }
+        },e?.status || 500,origin || '*');
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/admin/automation/run-record') {
+      const auth = await authenticateAdmin(request, env);
+      if (!auth?.ok) {
+        return json({ok:false,error:{code:auth?.code || 'ADMIN_AUTH_REQUIRED',message:auth?.message || '管理者認証が必要です。'}},auth?.status || 401,origin || '*');
+      }
+
+      const body = await readJsonBody(request);
+      try {
+        const result = await recordAutomationRun(env,body || {});
+        return json({ok:true,result},200,origin || '*');
+      } catch (e) {
+        return json({
+          ok:false,
+          error:{
+            code:e?.code || 'AUTOMATION_RECORD_FAILED',
+            message:String(e?.message || '自動運用結果を記録できませんでした。')
+          }
+        },e?.status || 500,origin || '*');
       }
     }
 
