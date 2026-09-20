@@ -188,3 +188,79 @@ button{cursor:pointer}
 .pipeline-progress{margin-top:14px;padding:13px 14px;border:1px solid #d7e6ef;border-radius:13px;background:#f4f9fc}
 .pipeline-progress strong{display:block;color:#245373}
 .pipeline-progress p{margin:5px 0 0;color:#617a8d;font-size:13px}
+
+
+/* STEP5-11: production readiness */
+.readiness-panel{margin-top:16px}
+.readiness-summary{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin:12px 0 14px
+}
+.readiness-summary>div{
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#f8fbfd
+}
+.readiness-summary span{
+  display:block;
+  color:#6b8395;
+  font-size:12px;
+  font-weight:800
+}
+.readiness-summary strong{
+  display:block;
+  margin-top:5px;
+  color:#245373;
+  font-size:20px
+}
+.readiness-checks{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px
+}
+.readiness-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:10px 12px;
+  border-radius:11px;
+  border:1px solid #e0e9ef;
+  background:#fafcfd
+}
+.readiness-item span{color:#577186;font-size:12px;font-weight:800}
+.readiness-item strong{font-size:12px}
+.readiness-item.is-ok strong{color:#17724f}
+.readiness-item.is-warn strong{color:#a36b11}
+.staff-config-guide{
+  margin-top:14px;
+  padding:13px 14px;
+  border:1px solid #d8e7ef;
+  border-radius:13px;
+  background:#f4f9fc
+}
+.staff-config-guide strong{display:block;color:#245373}
+.staff-config-guide p{margin:5px 0 0;color:#617b8d;font-size:12px}
+.staff-config-guide code{
+  padding:2px 5px;
+  border-radius:6px;
+  background:#e6f0f6;
+  color:#21577d
+}
+.small-note{opacity:.9}
+.readiness-warnings{
+  margin-top:12px;
+  padding:12px 14px;
+  border:1px solid #ecd6a7;
+  border-radius:13px;
+  background:#fff8e9;
+  color:#6c5627
+}
+.readiness-warnings strong{display:block}
+.readiness-warnings ul{margin:7px 0 0;padding-left:20px}
+@media(max-width:700px){
+  .readiness-summary,.readiness-checks{grid-template-columns:1fr}
+}
