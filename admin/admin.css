@@ -176,3 +176,15 @@ button{cursor:pointer}
 #google-signin[hidden]{
   display:none!important;
 }
+
+.panel-description{margin:6px 0 0;color:#6d8496;font-size:13px;font-weight:650}
+.test-document-preview{margin-top:14px;padding:15px 16px;border:1px solid #dce8ef;border-radius:14px;background:#f8fbfd}
+.test-document-preview strong{display:block;margin-bottom:6px;color:#244f70}
+.test-document-preview p{margin:0;color:#496579;line-height:1.8;font-size:13px}
+.register-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.admin-primary,.admin-danger{border:0;border-radius:12px;padding:11px 15px;font-weight:900}
+.admin-primary{background:#17699f;color:#fff;box-shadow:0 8px 18px rgba(23,105,159,.20)}
+.admin-danger{background:#fde9e8;color:#9a3936}
+.pipeline-progress{margin-top:14px;padding:13px 14px;border:1px solid #d7e6ef;border-radius:13px;background:#f4f9fc}
+.pipeline-progress strong{display:block;color:#245373}
+.pipeline-progress p{margin:5px 0 0;color:#617a8d;font-size:13px}
