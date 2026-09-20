@@ -4,61 +4,71 @@
   <base target="_top">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>校内FAQ 資料登録ツール</title>
+  <title>校内FAQ RAG資料登録ツール</title>
   <style>
     :root{
+      --ink:#17324d;--muted:#667f92;--line:#dbe7ef;--page:#f3f7fa;
+      --navy:#15557f;--green:#16865b;--amber:#b87910;--red:#b94b47;
       font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;
-      color:#173126;background:#f4f7f5;
+      color:var(--ink);background:var(--page)
     }
     *{box-sizing:border-box}
-    body{margin:0;background:#f4f7f5}
-    header{background:#145c43;color:#fff;padding:22px 26px}
-    header h1{margin:0;font-size:24px}
+    body{margin:0;background:var(--page)}
+    header{background:linear-gradient(135deg,#164f77,#0d684f);color:#fff;padding:24px 28px}
+    header h1{margin:0;font-size:25px}
     header p{margin:7px 0 0;opacity:.9}
-    main{max-width:1180px;margin:24px auto;padding:0 18px 48px}
+    main{max-width:1220px;margin:24px auto;padding:0 18px 48px}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-    .card{background:#fff;border:1px solid #dce6e1;border-radius:14px;padding:18px;box-shadow:0 4px 16px rgba(0,0,0,.04)}
-    h2{font-size:18px;margin:0 0 14px}
-    .status-row{display:flex;gap:10px;flex-wrap:wrap}
-    .badge{padding:6px 10px;border-radius:999px;background:#eaf3ef;font-size:13px}
-    .ok{background:#e5f5ea;color:#176434}.warn{background:#fff1d6;color:#7a5200}.bad{background:#fde7e7;color:#8b1e1e}
-    label{display:block;font-weight:700;font-size:13px;margin:10px 0 5px}
-    input,textarea{width:100%;border:1px solid #cfdad5;border-radius:9px;padding:10px;font:inherit;background:#fff}
-    input[type="checkbox"]{width:auto}
-    button{border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer}
-    button.primary{background:#145c43;color:#fff}
-    button.secondary{background:#eaf3ef;color:#145c43}
-    button.danger{background:#fde7e7;color:#8b1e1e}
-    button:disabled{opacity:.5;cursor:not-allowed}
-    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-    .table-wrap{overflow:auto;margin-top:12px}
-    table{width:100%;border-collapse:collapse;font-size:13px}
-    th,td{padding:9px 8px;border-bottom:1px solid #e5ece8;text-align:left;vertical-align:top}
-    th{background:#f7faf8;white-space:nowrap}
-    .small{font-size:12px;color:#63766d}
-    .selected{outline:2px solid #2b8865}
-    .preview{white-space:pre-wrap;background:#f7faf8;border-radius:9px;padding:12px;max-height:260px;overflow:auto;font-size:13px}
     .full{grid-column:1/-1}
-    .toast{position:fixed;right:18px;bottom:18px;background:#173126;color:#fff;padding:12px 16px;border-radius:10px;display:none;max-width:420px}
+    .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 7px 22px rgba(30,72,103,.06)}
+    h2{font-size:19px;margin:0 0 14px}
+    h3{font-size:15px;margin:16px 0 8px}
+    .status-row{display:flex;gap:8px;flex-wrap:wrap}
+    .badge{padding:6px 10px;border-radius:999px;background:#edf3f6;font-size:12px;font-weight:800}
+    .ok{background:#e4f5eb;color:#17663f}
+    .warn{background:#fff1d6;color:#775000}
+    .bad{background:#fde7e7;color:#8b1e1e}
+    label{display:block;font-weight:800;font-size:13px;margin:11px 0 5px}
+    input,select,textarea{width:100%;border:1px solid #cedce5;border-radius:10px;padding:10px 11px;font:inherit;background:#fff;color:var(--ink)}
+    input[type="checkbox"]{width:auto}
+    button{border:0;border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer}
+    button.primary{background:#155c87;color:#fff}
+    button.secondary{background:#eaf3f8;color:#185477}
+    button.success{background:#16865b;color:#fff}
+    button:disabled{opacity:.48;cursor:not-allowed}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .small{font-size:12px;color:#6f8494}
+    .table-wrap{overflow:auto;margin-top:12px;border:1px solid #e2ebf0;border-radius:12px}
+    table{width:100%;border-collapse:collapse;font-size:13px;min-width:850px}
+    th,td{padding:10px 9px;border-bottom:1px solid #e7eef2;text-align:left;vertical-align:top}
+    th{background:#f6f9fb;white-space:nowrap}
+    .preview{white-space:pre-wrap;background:#f7fafb;border-radius:10px;padding:12px;max-height:300px;overflow:auto;font-size:13px;line-height:1.65}
+    .unit-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
+    .unit-chip{display:flex;align-items:center;gap:6px;padding:7px 9px;border-radius:10px;background:#f1f6f8;font-size:12px;font-weight:700}
+    .progress{margin-top:14px;padding:14px;border-radius:12px;background:#f3f8fb;border:1px solid #dbe9f1}
+    .progress strong{display:block}
+    .progress p{margin:5px 0 0;font-size:13px;color:#567084}
     .loading{opacity:.65;pointer-events:none}
-    a{color:#145c43}
-    @media(max-width:800px){.grid{grid-template-columns:1fr}.full{grid-column:auto}}
+    .toast{position:fixed;right:18px;bottom:18px;background:#17324d;color:#fff;padding:12px 16px;border-radius:10px;display:none;max-width:460px;box-shadow:0 10px 24px rgba(0,0,0,.18)}
+    .meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .help{margin:8px 0 0;padding:10px 12px;border-radius:10px;background:#fff8e7;color:#705b27;font-size:12px}
+    @media(max-width:820px){.grid,.meta-grid{grid-template-columns:1fr}.full{grid-column:auto}}
   </style>
 </head>
 <body>
 <header>
-  <h1>校内FAQ 資料登録ツール</h1>
-  <p>Google Driveの承認済み資料を、校内FAQのRAGへ登録します。</p>
+  <h1>校内FAQ RAG資料登録ツール</h1>
+  <p>Google Driveの承認済み資料を、D1・Vectorize・FTS5へ登録します。</p>
 </header>
 
 <main id="app">
   <div class="grid">
     <section class="card">
-      <h2>① 接続状態</h2>
+      <h2>① RAG接続状態</h2>
       <div id="statusBadges" class="status-row"></div>
-      <p class="small" id="statusDetail"></p>
+      <p id="statusDetail" class="small"></p>
       <div class="actions">
-        <button class="secondary" onclick="reloadAll()">状態を更新</button>
+        <button class="secondary" onclick="reloadAll()">↻ 状態を更新</button>
       </div>
     </section>
 
@@ -69,7 +79,7 @@
       <div class="actions">
         <button class="primary" onclick="saveFolder()">フォルダを設定</button>
       </div>
-      <p class="small">このフォルダ直下の資料だけを一覧表示します。実資料を入れる前に、管理者だけがアクセスできるフォルダを指定してください。</p>
+      <p class="small">このフォルダ直下の資料を一覧表示します。管理者だけがアクセスできるフォルダを指定してください。</p>
     </section>
 
     <section class="card full">
@@ -79,23 +89,27 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>資料名</th><th>形式</th><th>更新</th><th>対応</th><th>操作</th></tr></thead>
+          <thead><tr><th>資料名</th><th>形式</th><th>更新</th><th>対応状況</th><th>操作</th></tr></thead>
           <tbody id="driveRows"><tr><td colspan="5">読み込み待ちです。</td></tr></tbody>
         </table>
       </div>
+      <p class="help">現在の直接登録対象：Googleドキュメント／スプレッドシート／スライド／TXT／CSV／JSON／HTML／Markdown。PDF・Word・Excel・PowerPointはSTEP5-8後半で追加します。</p>
     </section>
 
     <section class="card" id="registerCard">
-      <h2>④ 選択資料を確認・登録</h2>
+      <h2>④ 資料を確認してRAGへ登録</h2>
       <p id="selectedName" class="small">資料を選択してください。</p>
 
-      <label for="owner">管理担当</label>
-      <input id="owner" placeholder="例）教務部">
+      <label for="categoryId">カテゴリ</label>
+      <select id="categoryId"><option value="cat-other">その他</option></select>
 
-      <label for="version">版・年度</label>
-      <input id="version" placeholder="例）2026年度版">
+      <label for="ownerDepartment">管理担当</label>
+      <input id="ownerDepartment" placeholder="例）教務部">
 
-      <div class="grid" style="grid-template-columns:1fr 1fr">
+      <label for="versionLabel">版・年度</label>
+      <input id="versionLabel" placeholder="例）2026年度版">
+
+      <div class="meta-grid">
         <div>
           <label for="validFrom">有効開始日</label>
           <input id="validFrom" type="date">
@@ -106,28 +120,44 @@
         </div>
       </div>
 
-      <label>
-        <input id="approved" type="checkbox">
-        この資料が承認済みで、FAQの根拠として使えることを確認しました
-      </label>
-
       <div class="actions">
-        <button class="secondary" id="previewBtn" onclick="previewSelected()" disabled>本文をプレビュー</button>
-        <button class="primary" id="registerBtn" onclick="registerSelected()" disabled>RAGへ登録</button>
+        <button class="secondary" id="previewBtn" onclick="previewSelected()" disabled>本文・構造をプレビュー</button>
+      </div>
+
+      <div id="unitArea" style="display:none">
+        <h3>登録するシート／スライド</h3>
+        <div id="unitList" class="unit-list"></div>
       </div>
 
       <div id="previewBox" class="preview" style="display:none;margin-top:12px"></div>
+
+      <label>
+        <input id="approved" type="checkbox">
+        この資料が承認済みで、校内FAQの根拠として使用できることを確認しました
+      </label>
+
+      <div class="actions">
+        <button class="success" id="registerBtn" onclick="registerSelected()" disabled>新RAGへ登録する</button>
+      </div>
+
+      <div id="progressBox" class="progress" style="display:none">
+        <strong id="progressTitle">処理状況</strong>
+        <p id="progressText"></p>
+        <div class="actions">
+          <button class="secondary" id="continueBtn" onclick="continueRegistration()" style="display:none">処理を続ける</button>
+        </div>
+      </div>
     </section>
 
     <section class="card">
-      <h2>⑤ RAG登録済み資料</h2>
+      <h2>⑤ D1登録済み資料</h2>
       <div class="actions">
-        <button class="secondary" onclick="loadRegistered()">登録一覧を再読込</button>
+        <button class="secondary" onclick="loadRegistered()">一覧を再読込</button>
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>資料名</th><th>状態</th><th>版</th><th>操作</th></tr></thead>
-          <tbody id="registeredRows"><tr><td colspan="4">読み込み待ちです。</td></tr></tbody>
+          <thead><tr><th>資料名</th><th>カテゴリ</th><th>版</th><th>状態</th><th>承認</th><th>チャンク</th></tr></thead>
+          <tbody id="registeredRows"><tr><td colspan="6">読み込み待ちです。</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -137,22 +167,34 @@
 <div id="toast" class="toast"></div>
 
 <script>
-  const state = { selectedFile:null, appState:null };
+  const state={
+    selectedFile:null,
+    preview:null,
+    currentDocumentId:'',
+    appState:null
+  };
 
-  function gs(name, ...args){
+  function gs(name,...args){
     return new Promise((resolve,reject)=>{
       google.script.run
         .withSuccessHandler(resolve)
-        .withFailureHandler(err=>reject(new Error(err && err.message ? err.message : String(err))))
+        .withFailureHandler(err=>reject(new Error(err&&err.message?err.message:String(err))))
         [name](...args);
     });
   }
 
+  function escapeHtml(value){
+    return String(value??'').replace(/[&<>"']/g,c=>({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
   function toast(message){
     const el=document.getElementById('toast');
-    el.textContent=message; el.style.display='block';
+    el.textContent=message;
+    el.style.display='block';
     clearTimeout(window.__toastTimer);
-    window.__toastTimer=setTimeout(()=>el.style.display='none',3500);
+    window.__toastTimer=setTimeout(()=>el.style.display='none',3800);
   }
 
   function busy(on){
@@ -162,27 +204,38 @@
   async function reloadAll(){
     busy(true);
     try{
-      const s=await gs('getAppState');
+      const [s]=await Promise.all([gs('getRagAdminStateStep5')]);
       state.appState=s;
       renderStatus(s);
       if(s.folderId) document.getElementById('folderId').value=s.folderId;
-      await Promise.allSettled([loadDriveFiles(false),loadRegistered(false)]);
+      await Promise.allSettled([
+        loadCategories(false),
+        loadDriveFiles(false),
+        loadRegistered(false)
+      ]);
     }catch(e){toast(e.message)}
     finally{busy(false)}
   }
 
   function renderStatus(s){
     const badges=[];
+    const h=s.health||{};
+    const d1=Boolean(h.ragDb&&h.ragDb.ok&&h.ragDb.ragDb&&h.ragDb.ragDb.schemaReady);
+    const vector=Boolean(h.ragVector&&h.ragVector.ok&&h.ragVector.ragVector&&h.ragVector.ragVector.configured);
+    const gate=Boolean(h.ragGate&&h.ragGate.ok&&h.ragGate.ragGate&&h.ragGate.ragGate.configured);
+
     badges.push('<span class="badge '+(s.hasAdminToken?'ok':'bad')+'">管理Token '+(s.hasAdminToken?'設定済み':'未設定')+'</span>');
-    const faqConfigured=Boolean(s.faq && s.faq.faq && s.faq.faq.configured);
-    badges.push('<span class="badge '+(faqConfigured?'ok':'bad')+'">KV '+(faqConfigured?'接続済み':'未接続')+'</span>');
+    badges.push('<span class="badge '+(d1?'ok':'bad')+'">D1 '+(d1?'正常':'要確認')+'</span>');
+    badges.push('<span class="badge '+(vector?'ok':'bad')+'">Vectorize '+(vector?'正常':'要確認')+'</span>');
+    badges.push('<span class="badge '+(gate?'ok':'bad')+'">Evidence Gate '+(gate?'正常':'要確認')+'</span>');
     badges.push('<span class="badge '+(s.folderName?'ok':'warn')+'">Drive '+(s.folderName?'接続済み':'未設定')+'</span>');
     document.getElementById('statusBadges').innerHTML=badges.join('');
-    const faq=s.faq && s.faq.faq ? s.faq.faq : {};
-    document.getElementById('statusDetail').textContent =
+
+    const dash=h.ragDashboard&&h.ragDashboard.ragDashboard?h.ragDashboard.ragDashboard:{};
+    document.getElementById('statusDetail').textContent=
       'Drive: '+(s.folderName||s.folderError||'未設定')+
-      ' ／ RAG資料: '+(faq.sourceCount ?? '-')+
-      '件 ／ 有効: '+(faq.activeSourceCount ?? '-')+'件';
+      ' ／ 有効資料: '+(dash.activeDocuments??'-')+
+      '件 ／ 有効チャンク: '+(dash.activeChunks??'-')+'件';
   }
 
   async function saveFolder(){
@@ -197,8 +250,21 @@
     finally{busy(false)}
   }
 
+  async function loadCategories(showBusy=true){
+    if(showBusy)busy(true);
+    try{
+      const rows=await gs('getRagCategoriesStep5');
+      const select=document.getElementById('categoryId');
+      select.innerHTML=(rows||[]).map(c=>
+        '<option value="'+escapeHtml(c.categoryId)+'">'+escapeHtml(c.name)+'</option>'
+      ).join('');
+      if(!rows||!rows.length)select.innerHTML='<option value="cat-other">その他</option>';
+    }catch(e){toast(e.message)}
+    finally{if(showBusy)busy(false)}
+  }
+
   async function loadDriveFiles(showBusy=true){
-    if(showBusy) busy(true);
+    if(showBusy)busy(true);
     try{
       const files=await gs('getDriveFiles');
       const tbody=document.getElementById('driveRows');
@@ -209,7 +275,7 @@
       tbody.innerHTML=files.map(f=>{
         const status=f.supported
           ? '<span class="badge ok">対応</span>'
-          : '<span class="badge warn">未対応</span><div class="small">'+escapeHtml(f.note)+'</div>';
+          : '<span class="badge warn">後半で対応</span><div class="small">'+escapeHtml(f.note)+'</div>';
         return '<tr>'+
           '<td><strong>'+escapeHtml(f.name)+'</strong><div class="small">'+escapeHtml(f.mimeType)+'</div></td>'+
           '<td>'+escapeHtml(f.kind)+'</td>'+
@@ -220,29 +286,50 @@
       }).join('');
     }catch(e){
       document.getElementById('driveRows').innerHTML='<tr><td colspan="5">'+escapeHtml(e.message)+'</td></tr>';
-    }finally{if(showBusy) busy(false)}
+    }finally{if(showBusy)busy(false)}
   }
 
   function selectFile(json){
     const f=JSON.parse(json);
     state.selectedFile=f;
+    state.preview=null;
+    state.currentDocumentId='';
     document.getElementById('selectedName').textContent='選択中：'+f.name;
+    document.getElementById('versionLabel').value='';
     document.getElementById('previewBtn').disabled=false;
     document.getElementById('registerBtn').disabled=false;
     document.getElementById('previewBox').style.display='none';
+    document.getElementById('unitArea').style.display='none';
+    document.getElementById('progressBox').style.display='none';
   }
 
   async function previewSelected(){
     if(!state.selectedFile)return;
     busy(true);
     try{
-      const r=await gs('previewDriveFile',state.selectedFile.id);
+      const r=await gs('previewDriveFileStep5',state.selectedFile.id);
+      state.preview=r;
+
       const box=document.getElementById('previewBox');
       box.style.display='block';
       box.textContent=r.preview+(r.truncated?'\n\n…プレビューは先頭6,000文字までです。':'');
-      toast('本文を取得しました（'+r.chars+'文字）');
+
+      const units=Array.isArray(r.units)?r.units:[];
+      const selectable=units.length>1;
+      const unitArea=document.getElementById('unitArea');
+      const unitList=document.getElementById('unitList');
+      unitArea.style.display=selectable?'block':'none';
+      unitList.innerHTML=selectable?units.map(u=>
+        '<label class="unit-chip"><input type="checkbox" data-unit-id="'+escapeHtml(u.id)+'" checked> '+escapeHtml(u.label)+'</label>'
+      ).join(''):'';
+
+      toast('本文を取得しました（'+r.chars.toLocaleString()+'文字／'+r.sectionCount+'セクション）');
     }catch(e){toast(e.message)}
     finally{busy(false)}
+  }
+
+  function selectedUnits(){
+    return [...document.querySelectorAll('[data-unit-id]:checked')].map(el=>el.dataset.unitId);
   }
 
   async function registerSelected(){
@@ -250,69 +337,119 @@
     if(!document.getElementById('approved').checked){
       toast('承認済み資料であることを確認してください。');return;
     }
+
+    if(!state.preview){
+      toast('先に本文・構造をプレビューしてください。');return;
+    }
+
+    const hasUnitCheckbox=document.querySelectorAll('[data-unit-id]').length>0;
+    const units=selectedUnits();
+    if(hasUnitCheckbox&&!units.length){
+      toast('登録するシート／スライドを1つ以上選択してください。');return;
+    }
+
     const options={
       fileId:state.selectedFile.id,
-      owner:document.getElementById('owner').value.trim(),
-      version:document.getElementById('version').value.trim(),
+      categoryId:document.getElementById('categoryId').value,
+      ownerDepartment:document.getElementById('ownerDepartment').value.trim(),
+      versionLabel:document.getElementById('versionLabel').value.trim(),
       validFrom:document.getElementById('validFrom').value,
       validUntil:document.getElementById('validUntil').value,
+      selectedUnits:hasUnitCheckbox?units:null,
       approved:true
     };
+
+    busy(true);
+    showProgress('登録処理中','D1ステージング → Embedding → Vectorize → FTS5の順に処理しています。',false);
+
+    try{
+      const r=await gs('registerDriveFileStep5',options);
+      const p=r.progress||{};
+      state.currentDocumentId=p.documentId||r.stage?.result?.documentId||'';
+      renderProgress(p);
+      document.getElementById('approved').checked=false;
+      await Promise.allSettled([loadRegistered(false),reloadStatusOnly()]);
+    }catch(e){
+      showProgress('登録エラー',e.message,false);
+      toast(e.message);
+    }finally{busy(false)}
+  }
+
+  async function continueRegistration(){
+    if(!state.currentDocumentId){
+      toast('続行対象のdocumentIdがありません。');return;
+    }
     busy(true);
     try{
-      const r=await gs('registerDriveFile',options);
-      toast('RAGへ登録しました：'+r.title);
-      document.getElementById('approved').checked=false;
-      await Promise.all([loadRegistered(false),reloadStatusOnly()]);
-    }catch(e){toast(e.message)}
-    finally{busy(false)}
+      const p=await gs('continueRagRegistrationStep5',state.currentDocumentId);
+      renderProgress(p);
+      await Promise.allSettled([loadRegistered(false),reloadStatusOnly()]);
+    }catch(e){
+      showProgress('処理エラー',e.message,true);
+      toast(e.message);
+    }finally{busy(false)}
+  }
+
+  function showProgress(title,text,showContinue){
+    const box=document.getElementById('progressBox');
+    box.style.display='block';
+    document.getElementById('progressTitle').textContent=title;
+    document.getElementById('progressText').textContent=text;
+    document.getElementById('continueBtn').style.display=showContinue?'inline-block':'none';
+  }
+
+  function renderProgress(p){
+    if(!p){showProgress('状態不明','処理結果を取得できませんでした。',true);return}
+    if(p.status==='active'){
+      showProgress('登録完了','D1・Vectorize・FTS5への登録が完了し、FAQ検索対象として有効になりました。',false);
+      toast('RAG登録が完了しました。');
+      return;
+    }
+    if(p.status==='indexing'){
+      showProgress(
+        'Embedding処理中',
+        '準備済み '+(p.ready||0)+' / '+(p.total||0)+' チャンク。残り '+(p.remaining||0)+' チャンクです。',
+        true
+      );
+      return;
+    }
+    if(p.status==='waiting_finalize'){
+      showProgress('Vectorize反映待ち',p.message||'数秒待ってから「処理を続ける」を押してください。',true);
+      return;
+    }
+    showProgress('処理中',JSON.stringify(p),Boolean(p.needsContinue));
   }
 
   async function loadRegistered(showBusy=true){
-    if(showBusy) busy(true);
+    if(showBusy)busy(true);
     try{
-      const r=await gs('listRegisteredSources');
-      const rows=r.sources||[];
+      const rows=await gs('listRagDocumentsStep5');
       const tbody=document.getElementById('registeredRows');
       if(!rows.length){
-        tbody.innerHTML='<tr><td colspan="4">登録資料はありません。</td></tr>';
+        tbody.innerHTML='<tr><td colspan="6">登録資料はありません。</td></tr>';
         return;
       }
-      tbody.innerHTML=rows.map(s=>
+      tbody.innerHTML=rows.map(d=>
         '<tr>'+
-          '<td><strong>'+escapeHtml(s.title)+'</strong><div class="small">'+escapeHtml(s.sourceId)+'</div></td>'+
-          '<td><span class="badge '+(s.active?'ok':'warn')+'">'+(s.active?'有効':'非アクティブ')+'</span></td>'+
-          '<td>'+escapeHtml(s.version||'-')+'</td>'+
-          '<td><button class="danger" onclick=\'removeSource('+JSON.stringify(s.sourceId)+')\'>削除</button></td>'+
+          '<td><strong>'+escapeHtml(d.title||d.fileName||'無題')+'</strong><div class="small">'+escapeHtml(d.sourceId||'')+'</div></td>'+
+          '<td>'+escapeHtml(d.categoryName||'-')+'</td>'+
+          '<td>'+escapeHtml(d.versionLabel||('rev '+d.revisionNo))+'</td>'+
+          '<td><span class="badge '+(d.status==='active'?'ok':'warn')+'">'+escapeHtml(d.status||'-')+'</span></td>'+
+          '<td>'+escapeHtml(d.approvalStatus||'-')+'</td>'+
+          '<td>'+Number(d.activeChunkCount||0).toLocaleString()+' / '+Number(d.chunkCount||0).toLocaleString()+'</td>'+
         '</tr>'
       ).join('');
     }catch(e){
-      document.getElementById('registeredRows').innerHTML='<tr><td colspan="4">'+escapeHtml(e.message)+'</td></tr>';
-    }finally{if(showBusy) busy(false)}
-  }
-
-  async function removeSource(sourceId){
-    if(!confirm('この資料をRAGから削除しますか？'))return;
-    busy(true);
-    try{
-      await gs('removeRegisteredSource',sourceId);
-      toast('RAGから削除しました。');
-      await Promise.all([loadRegistered(false),reloadStatusOnly()]);
-    }catch(e){toast(e.message)}
-    finally{busy(false)}
+      document.getElementById('registeredRows').innerHTML='<tr><td colspan="6">'+escapeHtml(e.message)+'</td></tr>';
+    }finally{if(showBusy)busy(false)}
   }
 
   async function reloadStatusOnly(){
     try{
-      const s=await gs('getAppState');
-      state.appState=s; renderStatus(s);
+      const s=await gs('getRagAdminStateStep5');
+      state.appState=s;
+      renderStatus(s);
     }catch(e){}
-  }
-
-  function escapeHtml(value){
-    return String(value??'').replace(/[&<>"']/g,c=>({
-      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-    }[c]));
   }
 
   window.addEventListener('load',reloadAll);
