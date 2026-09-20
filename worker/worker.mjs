@@ -860,8 +860,25 @@ async function productionReadinessStatus(env) {
     try {
       const row = await env.RAG_DB.prepare(`
         SELECT
-          (SELECT COUNT(*) FROM documents WHERE is_current=1 AND status='active' AND approval_status='approved') AS documents,
-          (SELECT COUNT(*) FROM chunks WHERE is_active=1 AND embedding_status='ready') AS chunks
+          (
+            SELECT COUNT(*)
+            FROM documents
+            WHERE is_current=1
+              AND status='active'
+              AND approval_status='approved'
+              AND source_id NOT LIKE 'step5-test-%'
+          ) AS documents,
+          (
+            SELECT COUNT(*)
+            FROM chunks ch
+            JOIN documents d ON d.document_id=ch.document_id
+            WHERE ch.is_active=1
+              AND ch.embedding_status='ready'
+              AND d.is_current=1
+              AND d.status='active'
+              AND d.approval_status='approved'
+              AND d.source_id NOT LIKE 'step5-test-%'
+          ) AS chunks
       `).first();
       activeDocuments = Number(row?.documents || 0);
       activeChunks = Number(row?.chunks || 0);
