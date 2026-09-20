@@ -500,3 +500,73 @@ GAS verification:
 - negative -> status=insufficient / aiCalled=false
 
 先生向け現行FAQは、この検証完了まではSTEP4 KV方式のまま維持する。
+
+
+## STEP5-7 管理者ダッシュボード
+
+GitHub Pages:
+- /admin/
+- ホームの「設定」を「管理者」へ変更
+- ダッシュボード
+- 資料管理
+- 資料を追加
+- Drive同期
+- RAG検索テスト
+- 利用状況
+- システム状態
+
+公開状態で表示してよいもの:
+- Worker health
+- D1 schema ready
+- Vectorize ready
+- Evidence Gate ready
+- active document/chunk件数
+- Vector/D1容量の集計値
+
+公開してはいけないもの:
+- FAQ_ADMIN_TOKEN
+- API key
+- 資料本文
+- 管理者メール許可リスト
+- 個別資料の管理操作
+
+### Google管理者認証
+
+GitHub Pagesの管理操作はGoogle Identity Servicesを使用する。
+
+Frontend:
+- Sign in with Google button
+- popup callbackでID tokenを受け取る
+- tokenはsessionStorageのみ
+- Workerへ Authorization: Bearer <ID token>
+- localStorageやGitHubへ保存しない
+
+Worker:
+- Google JWKSでRS256署名検証
+- iss確認
+- aud = GOOGLE_OAUTH_CLIENT_ID
+- exp / nbf確認
+- email_verified確認
+- Google authoritative email（Gmail または Workspace hd）確認
+- ADMIN_EMAILS完全一致allowlist
+- 不一致は403
+
+既存GAS:
+- X-FAQ-Admin-Token / FAQ_ADMIN_TOKENを継続
+- GitHub PagesへFAQ_ADMIN_TOKENを渡さない
+
+Worker safe endpoints:
+- GET /health/admin-auth
+- GET /admin/auth/me
+- GET /health/rag-dashboard
+
+Cloudflare設定:
+- GOOGLE_OAUTH_CLIENT_ID
+- ADMIN_EMAILS
+
+Google Cloud OAuth client:
+- Application type: Web application
+- Authorized JavaScript origin:
+  https://kedamotohironobu-lang.github.io
+
+popup callback方式のため、この実装ではredirect URIは使用しない。
