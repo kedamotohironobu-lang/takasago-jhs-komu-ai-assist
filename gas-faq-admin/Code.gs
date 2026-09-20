@@ -667,6 +667,15 @@ function runRagAnswerGateStep5() {
 const STEP5_DAILY_MAINTENANCE_HANDLER = 'runDailyRagMaintenanceStep5';
 const STEP5_LAST_MAINTENANCE_PROPERTY = 'STEP5_LAST_MAINTENANCE_JSON';
 
+const STEP6_REPORT_FOLDER_PROPERTY = 'STEP6_REPORT_FOLDER_ID';
+const STEP6_LAST_MONTHLY_REPORT_PROPERTY = 'STEP6_LAST_MONTHLY_REPORT_MONTH';
+const STEP6_NOTIFY_EMAILS_PROPERTY = 'OPS_NOTIFY_EMAILS';
+const STEP6_LAST_ALERT_FINGERPRINT_PROPERTY = 'STEP6_LAST_ALERT_FINGERPRINT';
+const STEP6_LAST_ALERT_HAS_ISSUES_PROPERTY = 'STEP6_LAST_ALERT_HAS_ISSUES';
+const STEP6_LAST_AUTOMATION_PROPERTY = 'STEP6_LAST_AUTOMATION_JSON';
+const STEP6_ADMIN_DASHBOARD_URL =
+  'https://kedamotohironobu-lang.github.io/takasago-jhs-komu-ai-assist/admin/';
+
 const STEP5_LAST_DOCUMENT_PROPERTY = 'STEP5_LAST_DOCUMENT_ID';
 const STEP5_MAX_INDEX_BATCHES_PER_RUN = 8;
 
@@ -704,6 +713,520 @@ function checkDriveConversionStep5() {
   }
 }
 
+function previousMonthJstStep6_() {
+  const now = new Date();
+  let year = Number(Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy'));
+  let month = Number(Utilities.formatDate(now, 'Asia/Tokyo', 'M')) - 1;
+
+  if (month < 1) {
+    month = 12;
+    year -= 1;
+  }
+
+  return String(year) + '-' + String(month).padStart(2, '0');
+}
+
+function escapeDriveQueryValueStep6_(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'");
+}
+
+function getOrCreateReportFolderStep6_() {
+  const props = PropertiesService.getScriptProperties();
+  const savedId = String(props.getProperty(STEP6_REPORT_FOLDER_PROPERTY) || '').trim();
+
+  if (savedId) {
+    try {
+      const existing = Drive.Files.get(savedId, {
+        fields: 'id,name,mimeType,trashed,webViewLink'
+      });
+      if (
+        existing &&
+        existing.id &&
+        existing.mimeType === 'application/vnd.google-apps.folder' &&
+        existing.trashed !== true
+      ) {
+        return existing;
+      }
+    } catch (e) {
+      // 保存済みIDが無効なら再作成する。
+    }
+  }
+
+  const parentId = String(props.getProperty(PROP.FAQ_FOLDER_ID) || '').trim();
+  if (!parentId) {
+    throw new Error('FAQ_FOLDER_ID が未設定のため、月次レポート保存先を作成できません。');
+  }
+
+  const folderName = '校務AIアシスト_月次レポート';
+  const q =
+    "'" + escapeDriveQueryValueStep6_(parentId) + "' in parents" +
+    " and name='" + escapeDriveQueryValueStep6_(folderName) + "'" +
+    " and mimeType='application/vnd.google-apps.folder'" +
+    " and trashed=false";
+
+  const found = Drive.Files.list({
+    q: q,
+    fields: 'files(id,name,mimeType,trashed,webViewLink)',
+    pageSize: 10
+  });
+
+  const rows = found && found.files ? found.files : [];
+  if (rows.length) {
+    props.setProperty(STEP6_REPORT_FOLDER_PROPERTY, rows[0].id);
+    return rows[0];
+  }
+
+  const created = Drive.Files.create(
+    {
+      name: folderName,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId]
+    },
+    null,
+    {
+      fields: 'id,name,mimeType,trashed,webViewLink'
+    }
+  );
+
+  if (!created || !created.id) {
+    throw new Error('月次レポート保存フォルダを作成できませんでした。');
+  }
+
+  props.setProperty(STEP6_REPORT_FOLDER_PROPERTY, created.id);
+  return created;
+}
+
+function findReportFileStep6_(folderId, fileName) {
+  const q =
+    "'" + escapeDriveQueryValueStep6_(folderId) + "' in parents" +
+    " and name='" + escapeDriveQueryValueStep6_(fileName) + "'" +
+    " and trashed=false";
+
+  const found = Drive.Files.list({
+    q: q,
+    fields: 'files(id,name,webViewLink,createdTime)',
+    pageSize: 10
+  });
+
+  const rows = found && found.files ? found.files : [];
+  return rows.length ? rows[0] : null;
+}
+
+function savePreviousMonthReportStep6_(force) {
+  const props = PropertiesService.getScriptProperties();
+  const month = previousMonthJstStep6_();
+  const folder = getOrCreateReportFolderStep6_();
+  const fileName = '校務AIアシスト_月次レポート_' + month + '.json';
+
+  const existing = findReportFileStep6_(folder.id, fileName);
+  if (existing && force !== true) {
+    props.setProperty(STEP6_LAST_MONTHLY_REPORT_PROPERTY, month);
+    return {
+      ok: true,
+      month: month,
+      saved: false,
+      existing: true,
+      fileId: existing.id,
+      fileName: fileName,
+      webViewLink: existing.webViewLink || '',
+      folderId: folder.id,
+      folderName: folder.name || '校務AIアシスト_月次レポート'
+    };
+  }
+
+  const response = workerRequest_(
+    '/admin/monthly-report?month=' + encodeURIComponent(month),
+    'get',
+    null,
+    true
+  );
+  const report = response && response.result ? response.result : {};
+
+  if (existing) {
+    props.setProperty(STEP6_LAST_MONTHLY_REPORT_PROPERTY, month);
+    return {
+      ok: true,
+      month: month,
+      saved: false,
+      existing: true,
+      fileId: existing.id,
+      fileName: fileName,
+      webViewLink: existing.webViewLink || '',
+      folderId: folder.id,
+      folderName: folder.name || '校務AIアシスト_月次レポート'
+    };
+  }
+
+  const blob = Utilities.newBlob(
+    JSON.stringify(report, null, 2),
+    'application/json',
+    fileName
+  );
+
+  const created = Drive.Files.create(
+    {
+      name: fileName,
+      mimeType: 'application/json',
+      parents: [folder.id],
+      description: '高砂中学校 校務AIアシスト 月次運用レポート ' + month
+    },
+    blob,
+    {
+      fields: 'id,name,webViewLink,createdTime'
+    }
+  );
+
+  if (!created || !created.id) {
+    throw new Error('月次レポートをGoogle Driveへ保存できませんでした。');
+  }
+
+  props.setProperty(STEP6_LAST_MONTHLY_REPORT_PROPERTY, month);
+
+  return {
+    ok: true,
+    month: month,
+    saved: true,
+    existing: false,
+    fileId: created.id,
+    fileName: fileName,
+    webViewLink: created.webViewLink || '',
+    folderId: folder.id,
+    folderName: folder.name || '校務AIアシスト_月次レポート'
+  };
+}
+
+function getNotificationRecipientsStep6_() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = String(props.getProperty(STEP6_NOTIFY_EMAILS_PROPERTY) || '').trim();
+
+  let emails = raw
+    ? raw.split(/[;,\n\r]+/).map(function (x) { return String(x || '').trim().toLowerCase(); })
+    : [];
+
+  emails = emails.filter(function (email, index, self) {
+    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) &&
+      self.indexOf(email) === index;
+  });
+
+  let source = 'OPS_NOTIFY_EMAILS';
+
+  if (!emails.length) {
+    const owner = String(Session.getEffectiveUser().getEmail() || '')
+      .trim()
+      .toLowerCase();
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(owner)) {
+      emails = [owner];
+      source = 'effectiveUser';
+    } else {
+      source = 'none';
+    }
+  }
+
+  return {
+    emails: emails,
+    count: emails.length,
+    source: source
+  };
+}
+
+function alertFingerprintStep6_(value) {
+  const bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    JSON.stringify(value),
+    Utilities.Charset.UTF_8
+  );
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/g, '');
+}
+
+function sendOperationsMailStep6_(recipients, state, recovery) {
+  if (!recipients || !recipients.length) {
+    return { ok: false, sent: false, reason: 'notification_recipient_missing' };
+  }
+
+  if (MailApp.getRemainingDailyQuota() < recipients.length) {
+    return { ok: false, sent: false, reason: 'mail_quota_exceeded' };
+  }
+
+  const subject = recovery
+    ? '[校務AIアシスト] 運用状態が正常化しました'
+    : '[校務AIアシスト] 運用・FAQ改善の確認が必要です';
+
+  const lines = [
+    '高砂市立高砂中学校 校務AIアシスト',
+    '',
+    recovery
+      ? '前回通知していた要確認状態が解消されました。'
+      : '自動監視で確認が必要な状態を検出しました。',
+    '',
+    '【運用監視】',
+    '状態: ' + String(state.operationsHealth || 'unknown'),
+    '運用アラート: ' + Number(state.operationsAlertCount || 0) + '件',
+    '',
+    '【FAQ改善候補】',
+    '要対応: ' + Number(state.actionCount || 0) + '件',
+    '要確認: ' + Number(state.watchCount || 0) + '件',
+    '資料状態の問題: ' + Number(state.statusIssues || 0) + '件',
+    '30日以内の期限: ' + Number(state.expiringSoon || 0) + '件',
+    '',
+    '質問本文・AI回答本文はこの通知に含めていません。',
+    '',
+    '管理者画面:',
+    STEP6_ADMIN_DASHBOARD_URL
+  ];
+
+  MailApp.sendEmail({
+    to: recipients.join(','),
+    subject: subject,
+    body: lines.join('\n'),
+    name: '高砂中学校 校務AIアシスト'
+  });
+
+  return {
+    ok: true,
+    sent: true,
+    recovery: Boolean(recovery),
+    recipientCount: recipients.length
+  };
+}
+
+function checkAndNotifyStep6_() {
+  const props = PropertiesService.getScriptProperties();
+
+  const operationsResponse = workerRequest_(
+    '/admin/operations/summary?hours=24',
+    'get',
+    null,
+    true
+  );
+  const improvementResponse = workerRequest_(
+    '/admin/improvement/candidates?days=30',
+    'get',
+    null,
+    true
+  );
+
+  const operations = operationsResponse && operationsResponse.result
+    ? operationsResponse.result
+    : {};
+  const improvement = improvementResponse && improvementResponse.result
+    ? improvementResponse.result
+    : {};
+  const summary = improvement.summary || {};
+
+  const alertCodes = Array.isArray(operations.alerts)
+    ? operations.alerts.map(function (x) { return String(x && x.code ? x.code : ''); })
+      .filter(Boolean)
+      .sort()
+    : [];
+
+  const state = {
+    operationsHealth: String(operations.health || 'ok'),
+    operationsAlertCount: alertCodes.length,
+    alertCodes: alertCodes,
+    actionCount: Number(summary.actionCount || 0),
+    watchCount: Number(summary.watchCount || 0),
+    statusIssues: Number(summary.statusIssues || 0),
+    expiringSoon: Number(summary.expiringSoon || 0)
+  };
+
+  const hasIssues =
+    state.operationsHealth !== 'ok' ||
+    state.operationsAlertCount > 0 ||
+    state.actionCount > 0 ||
+    state.watchCount > 0;
+
+  const fingerprint = alertFingerprintStep6_(state);
+  const previousFingerprint = String(
+    props.getProperty(STEP6_LAST_ALERT_FINGERPRINT_PROPERTY) || ''
+  );
+  const previousHadIssues =
+    String(props.getProperty(STEP6_LAST_ALERT_HAS_ISSUES_PROPERTY) || '') === 'true';
+
+  const recipients = getNotificationRecipientsStep6_();
+  let notificationStatus = 'unchanged';
+  let mail = {
+    ok: true,
+    sent: false,
+    reason: ''
+  };
+
+  if (!previousFingerprint) {
+    if (hasIssues) {
+      if (recipients.count) {
+        mail = sendOperationsMailStep6_(recipients.emails, state, false);
+        notificationStatus = mail.sent ? 'sent_initial_issue' : (mail.reason || 'send_failed');
+      } else {
+        notificationStatus = 'recipient_missing';
+      }
+    } else {
+      notificationStatus = 'baseline_ok';
+      props.setProperty(STEP6_LAST_ALERT_FINGERPRINT_PROPERTY, fingerprint);
+      props.setProperty(STEP6_LAST_ALERT_HAS_ISSUES_PROPERTY, 'false');
+    }
+  } else if (fingerprint !== previousFingerprint) {
+    if (hasIssues) {
+      if (recipients.count) {
+        mail = sendOperationsMailStep6_(recipients.emails, state, false);
+        notificationStatus = mail.sent ? 'sent_changed_issue' : (mail.reason || 'send_failed');
+      } else {
+        notificationStatus = 'recipient_missing';
+      }
+    } else if (previousHadIssues) {
+      if (recipients.count) {
+        mail = sendOperationsMailStep6_(recipients.emails, state, true);
+        notificationStatus = mail.sent ? 'sent_recovery' : (mail.reason || 'send_failed');
+      } else {
+        notificationStatus = 'recipient_missing';
+      }
+    } else {
+      notificationStatus = 'changed_ok';
+    }
+
+    if (!hasIssues || mail.sent) {
+      props.setProperty(STEP6_LAST_ALERT_FINGERPRINT_PROPERTY, fingerprint);
+      props.setProperty(
+        STEP6_LAST_ALERT_HAS_ISSUES_PROPERTY,
+        hasIssues ? 'true' : 'false'
+      );
+    }
+  }
+
+  return {
+    ok: mail.ok !== false,
+    notificationStatus: notificationStatus,
+    hasIssues: hasIssues,
+    recipients: {
+      count: recipients.count,
+      source: recipients.source
+    },
+    mail: mail,
+    state: state
+  };
+}
+
+function recordAutomationRunStep6_(automation, errors) {
+  const report = automation && automation.monthlyReport
+    ? automation.monthlyReport
+    : {};
+  const notify = automation && automation.notification
+    ? automation.notification
+    : {};
+  const alertState = notify.state || {};
+
+  const payload = {
+    runType: 'daily',
+    status: errors && errors.length
+      ? (automation && (automation.monthlyReport || automation.notification) ? 'partial' : 'error')
+      : 'ok',
+    reportMonth: String(report.month || ''),
+    reportSaved: Boolean(report.saved || report.existing),
+    notificationStatus: String(notify.notificationStatus || ''),
+    operationsHealth: String(alertState.operationsHealth || ''),
+    improvementActionCount: Number(alertState.actionCount || 0),
+    improvementWatchCount: Number(alertState.watchCount || 0),
+    errorCount: errors ? errors.length : 0
+  };
+
+  return workerRequest_(
+    '/admin/automation/run-record',
+    'post',
+    payload,
+    true
+  );
+}
+
+function getAutomationStatusStep6() {
+  const props = PropertiesService.getScriptProperties();
+  const recipients = getNotificationRecipientsStep6_();
+  const maintenance = getDailyMaintenanceStatusStep5();
+
+  let last = null;
+  const raw = String(props.getProperty(STEP6_LAST_AUTOMATION_PROPERTY) || '').trim();
+  if (raw) {
+    try {
+      last = JSON.parse(raw);
+    } catch (e) {
+      last = {
+        ok: false,
+        errors: ['保存済み自動運用結果を読み取れませんでした。']
+      };
+    }
+  }
+
+  let reportFolder = null;
+  const reportFolderId = String(props.getProperty(STEP6_REPORT_FOLDER_PROPERTY) || '').trim();
+  if (reportFolderId) {
+    try {
+      const folder = Drive.Files.get(reportFolderId, {
+        fields: 'id,name,webViewLink,trashed'
+      });
+      if (folder && folder.trashed !== true) {
+        reportFolder = {
+          id: folder.id,
+          name: folder.name || '',
+          webViewLink: folder.webViewLink || ''
+        };
+      }
+    } catch (e) {}
+  }
+
+  return {
+    ok: true,
+    enabled: Boolean(maintenance && maintenance.enabled),
+    schedule: maintenance && maintenance.schedule
+      ? maintenance.schedule
+      : '',
+    recipientCount: recipients.count,
+    recipientSource: recipients.source,
+    reportFolder: reportFolder,
+    lastMonthlyReportMonth: String(
+      props.getProperty(STEP6_LAST_MONTHLY_REPORT_PROPERTY) || ''
+    ),
+    last: last
+  };
+}
+
+function savePreviousMonthReportNowStep6() {
+  return savePreviousMonthReportStep6_(false);
+}
+
+function sendNotificationTestStep6() {
+  const recipients = getNotificationRecipientsStep6_();
+  if (!recipients.count) {
+    throw new Error(
+      '通知先メールを確認できません。Script PropertiesのOPS_NOTIFY_EMAILSを設定してください。'
+    );
+  }
+
+  if (MailApp.getRemainingDailyQuota() < recipients.count) {
+    throw new Error('メール送信上限のためテスト通知を送信できません。');
+  }
+
+  MailApp.sendEmail({
+    to: recipients.emails.join(','),
+    subject: '[校務AIアシスト] 自動通知 接続確認',
+    body: [
+      '高砂市立高砂中学校 校務AIアシスト',
+      '',
+      'STEP6-9 自動通知の接続確認メールです。',
+      '質問本文・AI回答本文は通知対象にしていません。',
+      '',
+      '管理者画面:',
+      STEP6_ADMIN_DASHBOARD_URL
+    ].join('\n'),
+    name: '高砂中学校 校務AIアシスト'
+  });
+
+  return {
+    ok: true,
+    sent: true,
+    recipientCount: recipients.count,
+    source: recipients.source
+  };
+}
+
 function runDailyRagMaintenanceStep5() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
@@ -720,6 +1243,11 @@ function runDailyRagMaintenanceStep5() {
       ranAt: new Date().toISOString(),
       worker: null,
       drive: null,
+      automation: {
+        monthlyReport: null,
+        notification: null,
+        workerRecord: null
+      },
       errors: []
     };
 
@@ -746,11 +1274,41 @@ function runDailyRagMaintenanceStep5() {
       result.errors.push('Drive scan: ' + String(e.message || e));
     }
 
+    try {
+      result.automation.monthlyReport = savePreviousMonthReportStep6_(false);
+    } catch (e) {
+      result.errors.push('Monthly report: ' + String(e.message || e));
+    }
+
+    try {
+      result.automation.notification = checkAndNotifyStep6_();
+    } catch (e) {
+      result.errors.push('Notification check: ' + String(e.message || e));
+    }
+
+    try {
+      result.automation.workerRecord = recordAutomationRunStep6_(
+        result.automation,
+        result.errors
+      );
+    } catch (e) {
+      result.errors.push('Automation record: ' + String(e.message || e));
+    }
+
     result.ok = result.errors.length === 0;
 
     PropertiesService.getScriptProperties().setProperty(
       STEP5_LAST_MAINTENANCE_PROPERTY,
       JSON.stringify(result)
+    );
+    PropertiesService.getScriptProperties().setProperty(
+      STEP6_LAST_AUTOMATION_PROPERTY,
+      JSON.stringify({
+        ok: result.ok,
+        ranAt: result.ranAt,
+        automation: result.automation,
+        errors: result.errors
+      })
     );
 
     console.log(JSON.stringify(result, null, 2));
