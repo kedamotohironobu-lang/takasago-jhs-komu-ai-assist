@@ -50,6 +50,27 @@ CREATE TABLE IF NOT EXISTS feedback_events (
   reason_code TEXT,
   UNIQUE (request_id)
 );
+CREATE TABLE IF NOT EXISTS improvement_actions (
+  action_id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL UNIQUE,
+  candidate_type TEXT NOT NULL,
+  document_id TEXT,
+  source_id TEXT,
+  title TEXT NOT NULL,
+  level TEXT NOT NULL CHECK (level IN ('action','watch','info')),
+  status TEXT NOT NULL DEFAULT 'open'
+    CHECK (status IN ('open','in_progress','done','dismissed')),
+  created_by TEXT,
+  updated_by TEXT,
+  started_at TEXT,
+  completed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_improvement_actions_status
+  ON improvement_actions(status,updated_at);
+CREATE INDEX IF NOT EXISTS idx_improvement_actions_document
+  ON improvement_actions(document_id,status);
 CREATE INDEX IF NOT EXISTS idx_usage_events_occurred
   ON usage_events(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_usage_events_tool_status
@@ -602,6 +623,369 @@ async function getImprovementCandidates(env, days = 30) {
   };
 }
 
+function normalizeMonth(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(20\d{2}|21\d{2})-(0[1-9]|1[0-2])$/);
+  if (match) return raw;
+
+  const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return now.toISOString().slice(0,7);
+}
+
+async function listImprovementActions(env) {
+  const db = requireDb(env);
+  await ensureOperationalSchema(env);
+
+  const rows = await db.prepare(`
+    SELECT
+      action_id,candidate_id,candidate_type,document_id,source_id,title,
+      level,status,created_by,updated_by,started_at,completed_at,
+      created_at,updated_at
+    FROM improvement_actions
+    ORDER BY
+      CASE status
+        WHEN 'in_progress' THEN 1
+        WHEN 'open' THEN 2
+        WHEN 'done' THEN 3
+        ELSE 4
+      END,
+      updated_at DESC
+    LIMIT 300
+  `).all();
+
+  const actions = (rows?.results || []).map(row => ({
+    actionId:String(row.action_id || ''),
+    candidateId:String(row.candidate_id || ''),
+    candidateType:String(row.candidate_type || ''),
+    documentId:String(row.document_id || ''),
+    sourceId:String(row.source_id || ''),
+    title:String(row.title || ''),
+    level:String(row.level || 'info'),
+    status:String(row.status || 'open'),
+    createdBy:String(row.created_by || ''),
+    updatedBy:String(row.updated_by || ''),
+    startedAt:String(row.started_at || ''),
+    completedAt:String(row.completed_at || ''),
+    createdAt:String(row.created_at || ''),
+    updatedAt:String(row.updated_at || '')
+  }));
+
+  return {
+    actions,
+    summary:{
+      open:actions.filter(a => a.status === 'open').length,
+      inProgress:actions.filter(a => a.status === 'in_progress').length,
+      done:actions.filter(a => a.status === 'done').length,
+      dismissed:actions.filter(a => a.status === 'dismissed').length
+    }
+  };
+}
+
+async function upsertImprovementAction(env, payload = {}, actorId = 'faq-admin') {
+  const db = requireDb(env);
+  await ensureOperationalSchema(env);
+
+  const candidateId = String(payload.candidateId || '').trim().slice(0,300);
+  const candidateType = String(payload.candidateType || '').trim().slice(0,120);
+  const documentId = String(payload.documentId || '').trim().slice(0,160) || null;
+  const sourceId = String(payload.sourceId || '').trim().slice(0,220) || null;
+  const title = String(payload.title || '').trim().slice(0,300);
+  const level = String(payload.level || 'info').trim();
+  const status = String(payload.status || 'open').trim();
+
+  if (!candidateId || !candidateType || !title) {
+    const e = new Error('改善候補の識別情報が不足しています。');
+    e.code = 'IMPROVEMENT_ACTION_INVALID';
+    e.status = 400;
+    throw e;
+  }
+  if (!['action','watch','info'].includes(level)) {
+    const e = new Error('改善候補のlevelが正しくありません。');
+    e.code = 'IMPROVEMENT_LEVEL_INVALID';
+    e.status = 400;
+    throw e;
+  }
+  if (!['open','in_progress','done','dismissed'].includes(status)) {
+    const e = new Error('改善対応のstatusが正しくありません。');
+    e.code = 'IMPROVEMENT_STATUS_INVALID';
+    e.status = 400;
+    throw e;
+  }
+
+  const existing = await db.prepare(`
+    SELECT action_id,status
+    FROM improvement_actions
+    WHERE candidate_id=?
+    LIMIT 1
+  `).bind(candidateId).first();
+
+  const actionId = existing?.action_id || ('imp-' + crypto.randomUUID());
+
+  await db.prepare(`
+    INSERT INTO improvement_actions (
+      action_id,candidate_id,candidate_type,document_id,source_id,title,
+      level,status,created_by,updated_by,started_at,completed_at,
+      created_at,updated_at
+    )
+    VALUES (
+      ?,?,?,?,?,?,?,?,?,?,
+      CASE WHEN ?='in_progress' THEN CURRENT_TIMESTAMP ELSE NULL END,
+      CASE WHEN ? IN ('done','dismissed') THEN CURRENT_TIMESTAMP ELSE NULL END,
+      CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+    )
+    ON CONFLICT(candidate_id) DO UPDATE SET
+      candidate_type=excluded.candidate_type,
+      document_id=excluded.document_id,
+      source_id=excluded.source_id,
+      title=excluded.title,
+      level=excluded.level,
+      status=excluded.status,
+      updated_by=excluded.updated_by,
+      started_at=CASE
+        WHEN excluded.status='in_progress'
+        THEN COALESCE(improvement_actions.started_at,CURRENT_TIMESTAMP)
+        ELSE improvement_actions.started_at
+      END,
+      completed_at=CASE
+        WHEN excluded.status IN ('done','dismissed')
+        THEN CURRENT_TIMESTAMP
+        WHEN excluded.status IN ('open','in_progress')
+        THEN NULL
+        ELSE improvement_actions.completed_at
+      END,
+      updated_at=CURRENT_TIMESTAMP
+  `).bind(
+    actionId,candidateId,candidateType,documentId,sourceId,title,
+    level,status,actorId,actorId,status,status
+  ).run();
+
+  const auditId = 'log-' + crypto.randomUUID();
+  try {
+    await db.prepare(`
+      INSERT INTO audit_logs (
+        log_id,occurred_at,actor_id,action,entity_type,entity_id,
+        summary,metadata_json
+      )
+      VALUES (
+        ?,CURRENT_TIMESTAMP,?,'improvement_action_updated',
+        'improvement_action',?,?,?
+      )
+    `).bind(
+      auditId,
+      actorId,
+      actionId,
+      '改善対応「' + title + '」を ' + status + ' に更新',
+      JSON.stringify({
+        candidateId,
+        candidateType,
+        documentId,
+        sourceId,
+        previousStatus:String(existing?.status || ''),
+        status,
+        level
+      })
+    ).run();
+  } catch {}
+
+  return {
+    ok:true,
+    actionId,
+    candidateId,
+    status
+  };
+}
+
+async function getMonthlyReport(env, monthValue) {
+  const db = requireDb(env);
+  await ensureOperationalSchema(env);
+
+  const month = normalizeMonth(monthValue);
+
+  const [
+    totals,
+    feedback,
+    feedbackReasons,
+    providers,
+    tools,
+    topDocuments,
+    jobSummary,
+    actionSummary,
+    completedActions,
+    documentSnapshot
+  ] = await Promise.all([
+    db.prepare(`
+      SELECT
+        COUNT(*) AS requests,
+        SUM(CASE WHEN status='answer' THEN 1 ELSE 0 END) AS answered,
+        SUM(CASE WHEN status='insufficient' THEN 1 ELSE 0 END) AS insufficient,
+        SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS errors,
+        SUM(CASE WHEN ai_called=1 THEN 1 ELSE 0 END) AS ai_calls,
+        ROUND(AVG(latency_ms),0) AS avg_latency_ms,
+        MAX(latency_ms) AS max_latency_ms
+      FROM usage_events
+      WHERE strftime('%Y-%m',occurred_at,'+9 hours')=?
+    `).bind(month).first(),
+
+    db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN rating='helpful' THEN 1 ELSE 0 END) AS helpful,
+        SUM(CASE WHEN rating='needs_improvement' THEN 1 ELSE 0 END) AS needs_improvement
+      FROM feedback_events
+      WHERE strftime('%Y-%m',occurred_at,'+9 hours')=?
+    `).bind(month).first(),
+
+    db.prepare(`
+      SELECT reason_code,COUNT(*) AS count
+      FROM feedback_events
+      WHERE strftime('%Y-%m',occurred_at,'+9 hours')=?
+        AND rating='needs_improvement'
+      GROUP BY reason_code
+      ORDER BY count DESC
+    `).bind(month).all(),
+
+    db.prepare(`
+      SELECT provider,COUNT(*) AS count,ROUND(AVG(latency_ms),0) AS avg_latency_ms
+      FROM usage_events
+      WHERE strftime('%Y-%m',occurred_at,'+9 hours')=?
+        AND provider IS NOT NULL
+      GROUP BY provider
+      ORDER BY count DESC
+    `).bind(month).all(),
+
+    db.prepare(`
+      SELECT tool_id,COUNT(*) AS count
+      FROM usage_events
+      WHERE strftime('%Y-%m',occurred_at,'+9 hours')=?
+      GROUP BY tool_id
+      ORDER BY count DESC
+    `).bind(month).all(),
+
+    db.prepare(`
+      SELECT d.document_id,d.title,d.source_id,COUNT(*) AS use_count
+      FROM usage_sources us
+      JOIN usage_events ue ON ue.event_id=us.event_id
+      JOIN documents d ON d.document_id=us.document_id
+      WHERE strftime('%Y-%m',ue.occurred_at,'+9 hours')=?
+      GROUP BY d.document_id,d.title,d.source_id
+      ORDER BY use_count DESC
+      LIMIT 10
+    `).bind(month).all(),
+
+    db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed
+      FROM sync_jobs
+      WHERE strftime('%Y-%m',created_at,'+9 hours')=?
+    `).bind(month).first(),
+
+    db.prepare(`
+      SELECT
+        SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) AS open,
+        SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END) AS in_progress,
+        SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done,
+        SUM(CASE WHEN status='dismissed' THEN 1 ELSE 0 END) AS dismissed
+      FROM improvement_actions
+    `).first(),
+
+    db.prepare(`
+      SELECT
+        action_id,candidate_id,candidate_type,title,level,status,completed_at
+      FROM improvement_actions
+      WHERE status IN ('done','dismissed')
+        AND strftime('%Y-%m',completed_at,'+9 hours')=?
+      ORDER BY completed_at DESC
+      LIMIT 100
+    `).bind(month).all(),
+
+    db.prepare(`
+      SELECT
+        SUM(CASE
+          WHEN is_current=1 AND status='active' AND approval_status='approved'
+           AND deleted_at IS NULL AND source_id NOT LIKE 'step5-test-%'
+          THEN 1 ELSE 0 END
+        ) AS active_documents,
+        (
+          SELECT COUNT(*)
+          FROM chunks c
+          JOIN documents d2 ON d2.document_id=c.document_id
+          WHERE c.is_active=1
+            AND c.embedding_status='ready'
+            AND d2.is_current=1
+            AND d2.status='active'
+            AND d2.approval_status='approved'
+            AND d2.deleted_at IS NULL
+            AND d2.source_id NOT LIKE 'step5-test-%'
+        ) AS active_chunks
+      FROM documents
+    `).first()
+  ]);
+
+  const requests = Number(totals?.requests || 0);
+  const answered = Number(totals?.answered || 0);
+  const insufficient = Number(totals?.insufficient || 0);
+  const errors = Number(totals?.errors || 0);
+  const feedbackTotal = Number(feedback?.total || 0);
+  const helpful = Number(feedback?.helpful || 0);
+
+  const improvementSnapshot = await getImprovementCandidates(env, 30);
+
+  return {
+    schema:'takasago-jhs-monthly-operations-report-v1',
+    month,
+    timezone:'Asia/Tokyo',
+    generatedAt:new Date().toISOString(),
+    privacy:{
+      containsQuestionText:false,
+      containsAnswerText:false,
+      containsUserEmail:false,
+      containsIpAddress:false,
+      containsSecrets:false
+    },
+    usage:{
+      requests,
+      answered,
+      insufficient,
+      errors,
+      aiCalls:Number(totals?.ai_calls || 0),
+      answerRate:requests ? answered / requests : 0,
+      insufficientRate:requests ? insufficient / requests : 0,
+      errorRate:requests ? errors / requests : 0,
+      avgLatencyMs:Number(totals?.avg_latency_ms || 0),
+      maxLatencyMs:Number(totals?.max_latency_ms || 0)
+    },
+    feedback:{
+      total:feedbackTotal,
+      helpful,
+      needsImprovement:Number(feedback?.needs_improvement || 0),
+      helpfulRate:feedbackTotal ? helpful / feedbackTotal : 0,
+      reasons:feedbackReasons?.results || []
+    },
+    providers:providers?.results || [],
+    tools:tools?.results || [],
+    topDocuments:topDocuments?.results || [],
+    syncJobs:{
+      total:Number(jobSummary?.total || 0),
+      completed:Number(jobSummary?.completed || 0),
+      failed:Number(jobSummary?.failed || 0)
+    },
+    improvementCycle:{
+      open:Number(actionSummary?.open || 0),
+      inProgress:Number(actionSummary?.in_progress || 0),
+      done:Number(actionSummary?.done || 0),
+      dismissed:Number(actionSummary?.dismissed || 0),
+      completedThisMonth:completedActions?.results || []
+    },
+    currentSnapshot:{
+      activeDocuments:Number(documentSnapshot?.active_documents || 0),
+      activeChunks:Number(documentSnapshot?.active_chunks || 0),
+      improvement:improvementSnapshot.summary || {}
+    }
+  };
+}
+
 async function getOperationsSummary(env, hours = 24) {
   const db = requireDb(env);
   await ensureOperationalSchema(env);
@@ -669,5 +1053,8 @@ export {
   submitFeedback,
   getUsageSummary,
   getImprovementCandidates,
+  listImprovementActions,
+  upsertImprovementAction,
+  getMonthlyReport,
   getOperationsSummary
 };
