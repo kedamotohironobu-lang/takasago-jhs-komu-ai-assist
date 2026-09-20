@@ -192,7 +192,19 @@
         <button class="secondary" id="enableMaintenanceBtn" onclick="enableMaintenance()">日次監視を有効化</button>
         <button class="secondary" id="disableMaintenanceBtn" onclick="disableMaintenance()">日次監視を無効化</button>
       </div>
-      <p class="help">日次監視は毎朝6時台（JST）に、期限切れ資料の除外とDrive変更件数の確認だけを行います。Drive変更資料を自動登録したり、原本未確認資料を自動削除したりはしません。</p>
+      <p class="help">日次監視は毎朝6時台（JST）に、期限切れ資料の除外、Drive変更確認、前月レポート自動保存、異常・改善候補の通知判定を行います。Drive変更資料を自動登録したり、原本未確認資料を自動削除したりはしません。</p>
+    </section>
+
+    <section class="card">
+      <h2>⑦ 月次レポート・自動通知</h2>
+      <div id="automationStatus" class="status-row"></div>
+      <p id="automationDetail" class="small">状態を確認しています。</p>
+      <div class="actions">
+        <button class="primary" onclick="saveMonthlyReportNow()">前月レポートを今すぐ保存</button>
+        <button class="secondary" onclick="sendNotificationTest()">通知テスト</button>
+        <button class="secondary" onclick="loadAutomationStatus()">状態を再確認</button>
+      </div>
+      <p class="help">月次レポートはFAQ資料フォルダ内の「校務AIアシスト_月次レポート」サブフォルダへJSON保存します。通知は状態が変化したときだけ送信します。質問本文・AI回答本文は通知しません。複数の通知先を指定する場合はScript Propertiesに <code>OPS_NOTIFY_EMAILS</code> をカンマ区切りで設定してください。未設定時はトリガー実行者自身のGoogleアカウントを使用します。</p>
     </section>
   </div>
 </main>
@@ -246,7 +258,8 @@
         loadCategories(false),
         loadDriveFiles(false),
         loadRegistered(false),
-        loadMaintenanceStatus(false)
+        loadMaintenanceStatus(false),
+        loadAutomationStatus(false)
       ]);
     }catch(e){toast(e.message)}
     finally{busy(false)}
@@ -646,7 +659,8 @@
     try{
       const result=await gs('runDailyRagMaintenanceStep5');
       renderMaintenanceStatus(await gs('getDailyMaintenanceStatusStep5'));
-      toast(result&&result.ok?'メンテナンスを実行しました。':'メンテナンス結果を確認してください。');
+      await loadAutomationStatus(false);
+      toast(result&&result.ok?'自動運用を実行しました。':'自動運用結果を確認してください。');
       await Promise.allSettled([
         loadDriveFiles(false),
         loadRegistered(false),
@@ -672,6 +686,101 @@
       const status=await gs('uninstallDailyMaintenanceTriggerStep5');
       renderMaintenanceStatus(status);
       toast('日次監視を無効化しました。');
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
+  }
+
+  async function loadAutomationStatus(showBusy=true){
+    if(showBusy)busy(true);
+    try{
+      const status=await gs('getAutomationStatusStep6');
+      renderAutomationStatus(status);
+    }catch(e){
+      document.getElementById('automationDetail').textContent=e.message;
+    }finally{if(showBusy)busy(false)}
+  }
+
+  function renderAutomationStatus(status){
+    const badges=[];
+    const enabled=Boolean(status&&status.enabled);
+    const recipientCount=Number(status&&status.recipientCount||0);
+    const last=status&&status.last?status.last:null;
+
+    badges.push(
+      '<span class="badge '+(enabled?'ok':'warn')+'">'+
+      (enabled?'自動運用 有効':'自動運用 無効')+
+      '</span>'
+    );
+    badges.push(
+      '<span class="badge '+(recipientCount?'ok':'warn')+'">'+
+      '通知先 '+recipientCount+'件'+
+      '</span>'
+    );
+    if(status&&status.lastMonthlyReportMonth){
+      badges.push(
+        '<span class="badge ok">月次保存 '+escapeHtml(status.lastMonthlyReportMonth)+'</span>'
+      );
+    }
+    if(last){
+      badges.push(
+        '<span class="badge '+(last.ok?'ok':'bad')+'">'+
+        (last.ok?'前回自動実行 正常':'前回自動実行 要確認')+
+        '</span>'
+      );
+    }
+
+    document.getElementById('automationStatus').innerHTML=badges.join('');
+
+    const folder=status&&status.reportFolder?status.reportFolder:null;
+    const folderText=folder
+      ? '保存先: '+(folder.name||'月次レポートフォルダ')
+      : '保存先: 初回実行時に自動作成';
+
+    if(!last){
+      document.getElementById('automationDetail').textContent=
+        (status&&status.schedule?status.schedule+' ／ ':'')+
+        folderText+
+        ' ／ 通知先: '+recipientCount+'件'+
+        ' ／ まだ自動実行履歴はありません。';
+      return;
+    }
+
+    const automation=last.automation||{};
+    const report=automation.monthlyReport||{};
+    const notification=automation.notification||{};
+    const ranAt=last.ranAt?new Date(last.ranAt).toLocaleString('ja-JP'):'日時不明';
+
+    document.getElementById('automationDetail').textContent=
+      '前回: '+ranAt+
+      ' ／ '+folderText+
+      ' ／ 月次: '+(report.month||'-')+
+      (report.saved?' 保存済み':(report.existing?' 既存':' 未保存'))+
+      ' ／ 通知: '+(notification.notificationStatus||'未判定')+
+      ' ／ 通知先 '+recipientCount+'件'+
+      (Array.isArray(last.errors)&&last.errors.length?' ／ エラー: '+last.errors.join(' / '):'');
+  }
+
+  async function saveMonthlyReportNow(){
+    busy(true);
+    try{
+      const result=await gs('savePreviousMonthReportNowStep6');
+      await loadAutomationStatus(false);
+      toast(
+        result&&result.saved
+          ? '前月レポートをGoogle Driveへ保存しました。'
+          : '前月レポートはすでに保存済みです。'
+      );
+    }catch(e){toast(e.message)}
+    finally{busy(false)}
+  }
+
+  async function sendNotificationTest(){
+    if(!confirm('通知接続確認メールを送信します。よろしいですか？'))return;
+    busy(true);
+    try{
+      const result=await gs('sendNotificationTestStep6');
+      await loadAutomationStatus(false);
+      toast('通知テストを送信しました（'+Number(result&&result.recipientCount||0)+'件）。');
     }catch(e){toast(e.message)}
     finally{busy(false)}
   }
