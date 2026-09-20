@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="admin.css?v=step6-5b">
+  <link rel="stylesheet" href="admin.css?v=step6-7">
 </head>
 <body>
   <div class="admin-shell">
@@ -27,6 +27,7 @@
         <button class="admin-nav-item" type="button" data-admin-view="search">🔎 RAG検索テスト</button>
         <button class="admin-nav-item" type="button" data-admin-view="acceptance">✅ 最終受入テスト</button>
         <button class="admin-nav-item" type="button" data-admin-view="usage">📈 利用状況</button>
+        <button class="admin-nav-item" type="button" data-admin-view="monthly">📄 月次レポート</button>
         <button class="admin-nav-item" type="button" data-admin-view="improvement">🛠 改善提案</button>
         <button class="admin-nav-item" type="button" data-admin-view="system">🩺 システム状態</button>
       </nav>
@@ -130,7 +131,7 @@
           <article class="panel wide">
             <div class="panel-head">
               <h3>現在のSTEP</h3>
-              <span class="panel-badge accent">STEP 6-5</span>
+              <span class="panel-badge accent">STEP 6-7</span>
             </div>
             <div class="step-flow">
               <div class="step-chip is-done">D1</div>
@@ -163,7 +164,11 @@
               <div class="step-arrow">→</div>
               <div class="step-chip is-done">改善抽出</div>
               <div class="step-arrow">→</div>
-              <div class="step-chip is-current">改善提案</div>
+              <div class="step-chip is-done">改善提案</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-done">月次レポート</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-current">改善サイクル</div>
             </div>
           </article>
         </div>
@@ -535,6 +540,120 @@
         </div>
       </section>
 
+      <section class="admin-view" data-view-panel="monthly" hidden>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">MONTHLY REPORT</p>
+            <h2>月次運用レポート</h2>
+          </div>
+          <div class="section-actions">
+            <label class="month-selector">
+              <span>対象月</span>
+              <input type="month" id="monthly-report-month">
+            </label>
+            <button class="refresh-button" type="button" id="generate-monthly-report">レポート作成</button>
+            <button class="refresh-button" type="button" id="download-monthly-report" disabled>JSON保存</button>
+          </div>
+        </div>
+
+        <div class="auth-required-panel" id="monthly-auth-required">
+          <div class="locked-icon">🔒</div>
+          <h3>管理者ログインが必要です</h3>
+          <p>月次レポートは匿名化された利用データと管理情報だけで作成します。</p>
+        </div>
+
+        <div id="monthly-content" hidden>
+          <article class="privacy-note">
+            <strong>JSTの暦月単位で集計</strong>
+            <p>対象月の1日から月末までを日本時間で集計します。質問本文、回答本文、メールアドレス、IP、秘密情報はレポートに含めません。</p>
+          </article>
+
+          <article class="panel wide monthly-report-header">
+            <div>
+              <p class="eyebrow">REPORT</p>
+              <h3 id="monthly-report-title">月次レポートを作成してください</h3>
+              <p id="monthly-report-generated" class="panel-description"></p>
+            </div>
+            <span class="panel-badge" id="monthly-report-status">未作成</span>
+          </article>
+
+          <div class="metric-grid monthly-metrics">
+            <article class="metric-card">
+              <span class="metric-label">利用件数</span>
+              <strong class="metric-value" id="monthly-requests">—</strong>
+              <span class="metric-note">対象月</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">回答率</span>
+              <strong class="metric-value" id="monthly-answer-rate">—</strong>
+              <span class="metric-note">answer / requests</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">根拠不足率</span>
+              <strong class="metric-value" id="monthly-insufficient-rate">—</strong>
+              <span class="metric-note">insufficient / requests</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">役に立った率</span>
+              <strong class="metric-value" id="monthly-helpful-rate">—</strong>
+              <span class="metric-note">定型評価</span>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel">
+              <div class="panel-head"><h3>応答・同期</h3><span class="panel-badge">対象月</span></div>
+              <div class="status-list">
+                <div><span>AI呼出</span><strong id="monthly-ai-calls">—</strong></div>
+                <div><span>エラー</span><strong id="monthly-errors">—</strong></div>
+                <div><span>平均応答時間</span><strong id="monthly-latency">—</strong></div>
+                <div><span>同期ジョブ 成功 / 失敗</span><strong id="monthly-jobs">—</strong></div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head"><h3>改善サイクル</h3><span class="panel-badge">現在</span></div>
+              <div class="status-list">
+                <div><span>未対応</span><strong id="monthly-cycle-open">—</strong></div>
+                <div><span>対応中</span><strong id="monthly-cycle-progress">—</strong></div>
+                <div><span>完了</span><strong id="monthly-cycle-done">—</strong></div>
+                <div><span>当月完了・見送り</span><strong id="monthly-cycle-completed">—</strong></div>
+              </div>
+            </article>
+
+            <article class="panel wide">
+              <div class="panel-head"><h3>よく使われた根拠資料</h3><span class="panel-badge">Top 10</span></div>
+              <div class="table-wrap">
+                <table class="admin-table">
+                  <thead><tr><th>資料名</th><th>利用回数</th></tr></thead>
+                  <tbody id="monthly-top-documents"><tr><td colspan="2">レポート未作成です。</td></tr></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head"><h3>AIプロバイダー</h3><span class="panel-badge">対象月</span></div>
+              <div id="monthly-providers" class="usage-list"><p class="empty-message">レポート未作成です。</p></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head"><h3>機能別利用</h3><span class="panel-badge">対象月</span></div>
+              <div id="monthly-tools" class="usage-list"><p class="empty-message">レポート未作成です。</p></div>
+            </article>
+
+            <article class="panel wide">
+              <div class="panel-head"><h3>現在のRAG状態</h3><span class="panel-badge">作成時点</span></div>
+              <div class="status-list">
+                <div><span>有効実資料</span><strong id="monthly-active-docs">—</strong></div>
+                <div><span>有効チャンク</span><strong id="monthly-active-chunks">—</strong></div>
+                <div><span>要対応改善候補</span><strong id="monthly-improvement-actions">—</strong></div>
+                <div><span>要確認改善候補</span><strong id="monthly-improvement-watch">—</strong></div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
       <section class="admin-view" data-view-panel="improvement" hidden>
         <div class="section-head">
           <div>
@@ -592,6 +711,40 @@
             </div>
             <div id="improvement-list" class="improvement-list">
               <p class="empty-message">改善候補を読み込んでいます。</p>
+            </div>
+          </article>
+
+          <article class="panel wide improvement-cycle-panel">
+            <div class="panel-head">
+              <div>
+                <h3>改善サイクル</h3>
+                <p class="panel-description">改善候補を定型状態だけで追跡します。自由記述メモは保存しません。</p>
+              </div>
+              <button class="refresh-button" type="button" id="refresh-improvement-actions">↻ 状態更新</button>
+            </div>
+
+            <div class="improvement-cycle-summary">
+              <div><span>未対応</span><strong id="cycle-open-count">—</strong></div>
+              <div><span>対応中</span><strong id="cycle-progress-count">—</strong></div>
+              <div><span>完了</span><strong id="cycle-done-count">—</strong></div>
+              <div><span>見送り</span><strong id="cycle-dismissed-count">—</strong></div>
+            </div>
+
+            <div class="table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>改善項目</th>
+                    <th>重要度</th>
+                    <th>状態</th>
+                    <th>更新</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="improvement-cycle-body">
+                  <tr><td colspan="5">改善対応はまだありません。</td></tr>
+                </tbody>
+              </table>
             </div>
           </article>
 
@@ -742,6 +895,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step6-5b" defer></script>
+  <script src="admin.js?v=step6-7" defer></script>
 </body>
 </html>
