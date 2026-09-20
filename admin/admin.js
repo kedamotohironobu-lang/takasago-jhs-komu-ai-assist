@@ -502,6 +502,52 @@
     const db=$('#d1-bar'); if(db) db.style.width=pct(d1Ratio)+'%';
   }
 
+  function renderReadiness(data){
+    const r=data?.readiness||{};
+    setText('readiness-pilot',r.pilotReady?'利用可':'未完了');
+    setText('readiness-schoolwide',r.schoolwideReady?'利用可':'未完了');
+
+    const badge=$('#readiness-badge');
+    if(badge){
+      badge.textContent=r.schoolwideReady?'一般公開可':(r.pilotReady?'管理者試験可':'要設定');
+      badge.classList.toggle('accent',Boolean(r.schoolwideReady));
+    }
+
+    const labels={
+      ragDatabase:'D1スキーマ',
+      vectorize:'Vectorize',
+      evidenceGate:'Evidence Gate',
+      aiProvider:'AIプロバイダー',
+      adminAuth:'管理者認証',
+      staffAuthPilot:'管理者によるFAQ試験',
+      staffAuthSchoolwide:'一般職員認証設定',
+      approvedDocuments:'承認済み有効資料',
+      activeChunks:'検索対象チャンク',
+      legacyKvPublicRetired:'旧KV公開経路の退役'
+    };
+
+    const checksEl=$('#readiness-checks');
+    if(checksEl){
+      const checks=r.checks||{};
+      checksEl.innerHTML=Object.keys(labels).map(key=>{
+        const ok=Boolean(checks[key]);
+        return '<div class="readiness-item '+(ok?'is-ok':'is-warn')+'">'+
+          '<span>'+labels[key]+'</span>'+
+          '<strong>'+(ok?'✓ OK':'要確認')+'</strong>'+
+        '</div>';
+      }).join('');
+    }
+
+    const warnings=$('#readiness-warnings');
+    const list=Array.isArray(r.warnings)?r.warnings:[];
+    if(warnings){
+      warnings.hidden=!list.length;
+      warnings.innerHTML=list.length
+        ? '<strong>確認事項</strong><ul>'+list.map(x=>'<li>'+escapeHtml(x)+'</li>').join('')+'</ul>'
+        : '';
+    }
+  }
+
   function renderHealth(worker,d1,vector,gate){
     const workerOk=Boolean(worker?.ok);
     const d1Ok=Boolean(d1?.ragDb?.configured && d1?.ragDb?.schemaReady);
@@ -534,15 +580,17 @@
     state.loading=true;
     showToast('システム状態を更新しています…',1200);
     try{
-      const [worker,d1,vector,gate,summary]=await Promise.all([
+      const [worker,d1,vector,gate,summary,readiness]=await Promise.all([
         getJson('/health'),
         getJson('/health/rag-db'),
         getJson('/health/rag-vector'),
         getJson('/health/rag-gate'),
-        getJson('/health/rag-dashboard')
+        getJson('/health/rag-dashboard'),
+        getJson('/health/production-readiness')
       ]);
       renderHealth(worker,d1,vector,gate);
       renderSummary(summary);
+      renderReadiness(readiness);
       setText('last-updated',new Date().toLocaleString('ja-JP'));
     }catch(err){
       console.error(err);
