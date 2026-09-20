@@ -17,89 +17,44 @@ function requireDb(env) {
   return env.RAG_DB;
 }
 
+const REQUIRED_OPERATIONAL_TABLES = [
+  'usage_events',
+  'usage_sources',
+  'feedback_events',
+  'improvement_actions',
+  'automation_runs'
+];
+
 async function ensureOperationalSchema(env) {
   const db = requireDb(env);
-  await db.exec(`
-CREATE TABLE IF NOT EXISTS usage_events (
-  event_id TEXT PRIMARY KEY,
-  occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  request_id TEXT NOT NULL,
-  tool_id TEXT NOT NULL,
-  event_type TEXT NOT NULL DEFAULT 'generate',
-  status TEXT NOT NULL,
-  ai_called INTEGER NOT NULL DEFAULT 0 CHECK (ai_called IN (0,1)),
-  provider TEXT,
-  model TEXT,
-  latency_ms INTEGER NOT NULL DEFAULT 0 CHECK (latency_ms >= 0),
-  evidence_count INTEGER NOT NULL DEFAULT 0 CHECK (evidence_count >= 0),
-  context_used INTEGER NOT NULL DEFAULT 0 CHECK (context_used IN (0,1)),
-  error_code TEXT
-);
-CREATE TABLE IF NOT EXISTS usage_sources (
-  event_id TEXT NOT NULL,
-  document_id TEXT NOT NULL,
-  PRIMARY KEY (event_id, document_id),
-  FOREIGN KEY (event_id) REFERENCES usage_events(event_id) ON DELETE CASCADE,
-  FOREIGN KEY (document_id) REFERENCES documents(document_id) ON DELETE CASCADE
-);
-CREATE TABLE IF NOT EXISTS feedback_events (
-  feedback_id TEXT PRIMARY KEY,
-  occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  request_id TEXT NOT NULL,
-  rating TEXT NOT NULL CHECK (rating IN ('helpful','needs_improvement')),
-  reason_code TEXT,
-  UNIQUE (request_id)
-);
-CREATE TABLE IF NOT EXISTS improvement_actions (
-  action_id TEXT PRIMARY KEY,
-  candidate_id TEXT NOT NULL UNIQUE,
-  candidate_type TEXT NOT NULL,
-  document_id TEXT,
-  source_id TEXT,
-  title TEXT NOT NULL,
-  level TEXT NOT NULL CHECK (level IN ('action','watch','info')),
-  status TEXT NOT NULL DEFAULT 'open'
-    CHECK (status IN ('open','in_progress','done','dismissed')),
-  created_by TEXT,
-  updated_by TEXT,
-  started_at TEXT,
-  completed_at TEXT,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_improvement_actions_status
-  ON improvement_actions(status,updated_at);
-CREATE INDEX IF NOT EXISTS idx_improvement_actions_document
-  ON improvement_actions(document_id,status);
-CREATE TABLE IF NOT EXISTS automation_runs (
-  run_id TEXT PRIMARY KEY,
-  run_type TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('ok','partial','error')),
-  report_month TEXT,
-  report_saved INTEGER NOT NULL DEFAULT 0 CHECK (report_saved IN (0,1)),
-  notification_status TEXT,
-  operations_health TEXT,
-  improvement_action_count INTEGER NOT NULL DEFAULT 0,
-  improvement_watch_count INTEGER NOT NULL DEFAULT 0,
-  error_count INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_automation_runs_created
-  ON automation_runs(created_at);
-CREATE INDEX IF NOT EXISTS idx_usage_events_occurred
-  ON usage_events(occurred_at);
-CREATE INDEX IF NOT EXISTS idx_usage_events_tool_status
-  ON usage_events(tool_id,status,occurred_at);
-CREATE INDEX IF NOT EXISTS idx_usage_events_request
-  ON usage_events(request_id);
-CREATE INDEX IF NOT EXISTS idx_usage_sources_document
-  ON usage_sources(document_id,event_id);
-CREATE INDEX IF NOT EXISTS idx_feedback_events_occurred
-  ON feedback_events(occurred_at);
-CREATE INDEX IF NOT EXISTS idx_feedback_events_rating
-  ON feedback_events(rating,occurred_at);
-`);
-  return { ok:true };
+
+  // STEP6のスキーマ作成はWrangler migrationsを正本とする。
+  // リクエスト処理中にDDLを再実行せず、必要テーブルの存在だけを確認する。
+  const placeholders = REQUIRED_OPERATIONAL_TABLES.map(() => '?').join(',');
+  const rows = await db.prepare(
+    `SELECT name
+       FROM sqlite_master
+       WHERE type='table'
+         AND name IN (${placeholders})`
+  ).bind(...REQUIRED_OPERATIONAL_TABLES).all();
+
+  const existing = new Set(
+    (rows?.results || []).map(row => String(row?.name || '')).filter(Boolean)
+  );
+  const missingTables = REQUIRED_OPERATIONAL_TABLES.filter(name => !existing.has(name));
+
+  if (missingTables.length) {
+    const e = new Error(
+      'STEP6運用スキーマが未適用です。Wrangler migrationを確認してください: ' +
+      missingTables.join(', ')
+    );
+    e.code = 'OPERATIONAL_SCHEMA_NOT_READY';
+    e.status = 503;
+    e.missingTables = missingTables;
+    throw e;
+  }
+
+  return { ok:true, missingTables:[] };
 }
 
 function normalizeSources(sourceDocumentIds) {
