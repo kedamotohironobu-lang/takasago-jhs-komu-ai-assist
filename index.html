@@ -219,27 +219,6 @@
         </aside>
       </div>
     </section>
-
-    <section class="architecture" aria-labelledby="architecture-title">
-      <h3 id="architecture-title">最終システム構成 <span>※最終版では非表示</span></h3>
-      <div class="flow" aria-label="システム構成">
-        <div class="flow-item">GitHub Pages<br>UI</div>
-        <div class="flow-arrow" aria-hidden="true">→</div>
-        <div class="flow-item">Cloudflare Workers<br>API中継・RAG制御</div>
-        <div class="flow-arrow" aria-hidden="true">→</div>
-        <div class="flow-item">Cloudflare KV<br>校内FAQ根拠</div>
-        <div class="flow-arrow" aria-hidden="true">→</div>
-        <div class="flow-item">Cerebras<br>主AI</div>
-        <div class="flow-arrow" aria-hidden="true">→</div>
-        <div class="flow-item">Groq<br>予備1</div>
-        <div class="flow-arrow" aria-hidden="true">→</div>
-        <div class="flow-item">Gemini<br>予備2</div>
-      </div>
-      <div class="stage-card">
-        <strong>現在：STEP 4 校内FAQ・RAG基盤実装</strong>
-        <p>通常の9機能は本番AIへ接続済みです。校内FAQはCloudflare KVの承認資料だけを検索して回答するRAG方式へ移行しています。</p>
-      </div>
-    </section>
   </main>
 
   <div id="app-toast" class="toast" role="status" aria-live="polite" hidden></div>
