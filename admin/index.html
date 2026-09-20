@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="admin.css?v=step5-8b">
+  <link rel="stylesheet" href="admin.css?v=step5-11">
 </head>
 <body>
   <div class="admin-shell">
@@ -127,7 +127,7 @@
           <article class="panel wide">
             <div class="panel-head">
               <h3>現在のSTEP</h3>
-              <span class="panel-badge accent">STEP 5-10</span>
+              <span class="panel-badge accent">STEP 5-11</span>
             </div>
             <div class="step-flow">
               <div class="step-chip is-done">D1</div>
@@ -142,7 +142,9 @@
               <div class="step-arrow">→</div>
               <div class="step-chip is-done">職員FAQ</div>
               <div class="step-arrow">→</div>
-              <div class="step-chip is-current">FAQチャット</div>
+              <div class="step-chip is-done">FAQチャット</div>
+              <div class="step-arrow">→</div>
+              <div class="step-chip is-current">本番準備</div>
             </div>
           </article>
         </div>
@@ -293,6 +295,38 @@
           <article class="system-card"><span>Vectorize</span><strong id="health-vector">確認中</strong></article>
           <article class="system-card"><span>Evidence Gate</span><strong id="health-gate">確認中</strong></article>
         </div>
+
+        <article class="panel readiness-panel">
+          <div class="panel-head">
+            <div>
+              <h3>本番運用準備チェック</h3>
+              <p class="panel-description">管理者試験運用と、一般の先生への公開準備を分けて確認します。</p>
+            </div>
+            <span class="panel-badge" id="readiness-badge">確認中</span>
+          </div>
+
+          <div class="readiness-summary">
+            <div>
+              <span>管理者試験運用</span>
+              <strong id="readiness-pilot">確認中</strong>
+            </div>
+            <div>
+              <span>一般職員公開</span>
+              <strong id="readiness-schoolwide">確認中</strong>
+            </div>
+          </div>
+
+          <div class="readiness-checks" id="readiness-checks"></div>
+
+          <div class="staff-config-guide">
+            <strong>一般の先生へ公開するには</strong>
+            <p>Cloudflare Workerの Variables and Secrets に <code>STAFF_EMAILS</code> または <code>STAFF_DOMAINS</code> を設定します。</p>
+            <p class="small-note">個別許可なら STAFF_EMAILS、管理されたGoogle Workspace全体なら STAFF_DOMAINS を使用します。ADMIN_EMAILSの管理者は設定なしでも試験利用できます。</p>
+          </div>
+
+          <div class="readiness-warnings" id="readiness-warnings" hidden></div>
+        </article>
+
         <p class="last-updated">最終確認: <span id="last-updated">—</span></p>
       </section>
     </main>
@@ -300,6 +334,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step5-8b" defer></script>
+  <script src="admin.js?v=step5-11" defer></script>
 </body>
 </html>
