@@ -258,7 +258,7 @@ function mergeText(left, right) {
 function applyEvidenceGate(candidates) {
   const gate = RAG_CONFIG.retrieval.gate;
   const vectorOrdered = candidates
-    .filter(x => x.authoritative && Number.isFinite(Number(x.vectorScore)))
+    .filter(x => x.authoritative && x.vectorRank && Number.isFinite(Number(x.vectorScore)))
     .sort((a,b) => Number(a.vectorRank || 9999) - Number(b.vectorRank || 9999));
 
   const topVectorScore = Number(vectorOrdered[0]?.vectorScore || 0);
