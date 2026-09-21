@@ -1749,6 +1749,19 @@ function registerDriveFileStep5(options) {
     throw new Error('抽出本文が480,000文字を超えています。資料を分割してください。');
   }
 
+  const extractedTextForValidation = extracted.sections
+    .map(function (section) { return String(section && section.text || ''); })
+    .join('\n');
+  const placeholderMatches = extractedTextForValidation.match(
+    /[\[［]\s*(?:入力|実際の[^\]］]{0,60})\s*[\]］]/g
+  ) || [];
+  if (placeholderMatches.length) {
+    throw new Error(
+      '本番登録できません。ひな型の未入力表示が残っています: ' +
+      placeholderMatches.slice(0, 5).join(' / ')
+    );
+  }
+
   const lastUpdated = file.getLastUpdated();
   const stagePayload = {
     sourceId: makeSourceId_(fileId),
@@ -1804,6 +1817,19 @@ function registerDriveFileStep5(options) {
     stage: staged,
     progress: progress
   };
+}
+
+function discardProcessingRagDocumentStep5(documentId) {
+  const id = String(documentId || '').trim();
+  if (!id) throw new Error('破棄するdocumentIdがありません。');
+
+  const response = workerRequest_(
+    '/admin/rag/processing-discard',
+    'post',
+    { documentId: id },
+    true
+  );
+  return response && response.result ? response.result : response;
 }
 
 function continueLastRagRegistrationStep5() {
