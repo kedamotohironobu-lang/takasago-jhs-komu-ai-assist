@@ -1016,6 +1016,14 @@
     }
     if(state.quality.running) return;
 
+    const authOk=await verifyCurrentToken();
+    if(!authOk){
+      showToast('管理者認証の有効期限が切れています。もう一度Googleログインしてください。',5200);
+      if(nodes.qualityProgress) nodes.qualityProgress.textContent='認証待ち';
+      if(nodes.qualityProgressText) nodes.qualityProgressText.textContent='管理者認証を更新してから50問テストを実行してください。';
+      return;
+    }
+
     try{
       const cases=await loadQualityCases();
 
@@ -1084,6 +1092,23 @@
           });
           scored=scoreQualityCase(testCase,data?.result||{});
         }catch(err){
+          const authExpired=
+            Number(err?.status||0)===401 ||
+            ['FAQ_ADMIN_UNAUTHORIZED','ADMIN_AUTH_REQUIRED','ADMIN_AUTH_FAILED'].includes(String(err?.code||''));
+          if(authExpired){
+            sessionStorage.removeItem('takasagoAdminIdToken');
+            state.idToken='';
+            state.authenticated=false;
+            state.admin=null;
+            renderAuthState();
+            if(nodes.qualityProgress) nodes.qualityProgress.textContent='認証切れ';
+            if(nodes.qualityProgressText){
+              nodes.qualityProgressText.textContent=
+                '管理者認証の有効期限が切れたため、品質テストを中断しました。再ログイン後に最初から実行してください。';
+            }
+            showToast('管理者認証が切れたため50問テストを中断しました。再ログインしてください。',5200);
+            return;
+          }
           scored=scoreQualityCase(testCase,null,err?.message||'RAG品質テスト実行エラー');
         }
         scored.latencyMs=Math.round(performance.now()-started);
