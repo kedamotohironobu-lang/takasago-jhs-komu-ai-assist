@@ -1,0 +1,507 @@
+{
+  "schema": "takasago-jhs-rag-quality-test-v1",
+  "step": "STEP8-5",
+  "description": "STEP8-4で定義した5資料×10問のRAG品質確認テストセット。自動判定は構造・根拠資料・Evidence Gateの確認候補であり、回答本文の意味的正確性は管理者が確認する。",
+  "cases": [
+    {
+      "id": 1,
+      "documentNo": "01",
+      "document": "出張・旅費・復命手続",
+      "kind": "直接",
+      "question": "出張申請はいつまでに行えばよいですか？",
+      "expectedHeading": "2 出張前の手続 > 出張を申請する時期",
+      "expectedMode": "answer",
+      "expectedSourceContains": "出張・旅費・復命手続"
+    },
+    {
+      "id": 2,
+      "documentNo": "01",
+      "document": "出張・旅費・復命手続",
+      "kind": "直接",
+      "question": "出張の申請はどのように行いますか？",
+      "expectedHeading": "2 出張前の手続 > 出張申請の方法",
+      "expectedMode": "answer",
+      "expectedSourceContains": "出張・旅費・復命手続"
+    },
+    {
+      "id": 3,
+      "documentNo": "01",
+      "document": "出張・旅費・復命手続",
+      "kind": "言い換え",
+      "question": "出張に行くとき、何の書類を用意して誰に出せばいいですか？",
+      "expectedHeading": "2 出張前の手続 > 出張前に必要な書類 / 出張申請の提出先",
+      "expectedMode": "answer",
+      "expectedSourceContains": "出張・旅費・復命手続"
+    },
+    {
+      "id": 4,
+      "documentNo": "01",
+      "document": "出張・旅費・復命手続",
+      "kind": "直接",
+      "question": "出張先や交通手段が変更になった場合はどうすればよいですか？",
+      "expectedHeading": "3 出張当日の取扱い > 出張内容に変更が生じた場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "出張・旅費・復命手続"
+    },
+    {
+      "id": 5,
+      "documentNo": "01",
+      "document": "出張・旅費・復命手続",
+      "kind": "直接",
+      "question": "復命書はいつまでに提出しますか？",
+      "expectedHeading": "4 出張後の復命 > 復命書の提出期限",
+      "expectedMode": "answer",
+      "expectedSourceContains": "出張・旅費・復命手続"
+    },
+    {
+      "id": 6,
+      "documentNo": "01",
+      "document": "出張・旅費・復命手続",
+      "kind": "言い換え",
+      "question": "出張が終わったあと、報告は誰に出せばいいですか？",
+      "expectedHeading": "4 出張後の復命 > 復命書の提出先",
+      "expectedMode": "answer",
+      "expectedSourceContains": "出張・旅費・復命手続"
+    },
+    {
+      "id": 7,
+      "documentNo": "01",
+      "document": "出張・旅費・復命手続",
+      "kind": "直接",
+      "question": "復命書には何を記載しますか？",
+      "expectedHeading": "4 出張後の復命 > 復命書に記載する内容",
+      "expectedMode": "answer",
+      "expectedSourceContains": "出張・旅費・復命手続"
+    },
+    {
+      "id": 8,
+      "documentNo": "01",
+      "document": "出張・旅費・復命手続",
+      "kind": "直接",
+      "question": "旅費精算に必要な書類は何ですか？",
+      "expectedHeading": "5 旅費精算 > 旅費精算に必要な書類",
+      "expectedMode": "answer",
+      "expectedSourceContains": "出張・旅費・復命手続"
+    },
+    {
+      "id": 9,
+      "documentNo": "01",
+      "document": "出張・旅費・復命手続",
+      "kind": "直接",
+      "question": "自家用車を使って出張する場合の手続はどうなっていますか？",
+      "expectedHeading": "5 旅費精算 > 自家用車を使用する場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "出張・旅費・復命手続"
+    },
+    {
+      "id": 10,
+      "documentNo": "01",
+      "document": "出張・旅費・復命手続",
+      "kind": "根拠なし",
+      "question": "今年度の文化祭のテーマは何ですか？",
+      "expectedHeading": "5資料のいずれにも記載しない確認用質問",
+      "expectedMode": "insufficient",
+      "expectedSourceContains": ""
+    },
+    {
+      "id": 11,
+      "documentNo": "02",
+      "document": "服務・休暇手続",
+      "kind": "直接",
+      "question": "通常の勤務時間は何時から何時までですか？",
+      "expectedHeading": "2 勤務時間 > 通常の勤務時間",
+      "expectedMode": "answer",
+      "expectedSourceContains": "服務・休暇手続"
+    },
+    {
+      "id": 12,
+      "documentNo": "02",
+      "document": "服務・休暇手続",
+      "kind": "直接",
+      "question": "年次休暇はどのように申請しますか？",
+      "expectedHeading": "3 年次休暇 > 年次休暇の申請方法",
+      "expectedMode": "answer",
+      "expectedSourceContains": "服務・休暇手続"
+    },
+    {
+      "id": 13,
+      "documentNo": "02",
+      "document": "服務・休暇手続",
+      "kind": "言い換え",
+      "question": "朝、急に休むことになったら、まず誰にどのように連絡すればよいですか？",
+      "expectedHeading": "3 年次休暇 > 急な年次休暇の場合 / 6 欠勤・急な休み",
+      "expectedMode": "answer",
+      "expectedSourceContains": "服務・休暇手続"
+    },
+    {
+      "id": 14,
+      "documentNo": "02",
+      "document": "服務・休暇手続",
+      "kind": "直接",
+      "question": "特別休暇を申請するときに必要な添付書類は何ですか？",
+      "expectedHeading": "4 特別休暇 > 必要な添付書類",
+      "expectedMode": "answer",
+      "expectedSourceContains": "服務・休暇手続"
+    },
+    {
+      "id": 15,
+      "documentNo": "02",
+      "document": "服務・休暇手続",
+      "kind": "直接",
+      "question": "遅刻する場合は誰に連絡しますか？",
+      "expectedHeading": "5 遅刻・早退 > 遅刻する場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "服務・休暇手続"
+    },
+    {
+      "id": 16,
+      "documentNo": "02",
+      "document": "服務・休暇手続",
+      "kind": "言い換え",
+      "question": "勤務の途中で帰らなければならないときは、どんな手続が必要ですか？",
+      "expectedHeading": "5 遅刻・早退 > 早退する場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "服務・休暇手続"
+    },
+    {
+      "id": 17,
+      "documentNo": "02",
+      "document": "服務・休暇手続",
+      "kind": "直接",
+      "question": "当日に欠勤する場合の連絡方法を教えてください。",
+      "expectedHeading": "6 欠勤・急な休み > 当日の連絡方法",
+      "expectedMode": "answer",
+      "expectedSourceContains": "服務・休暇手続"
+    },
+    {
+      "id": 18,
+      "documentNo": "02",
+      "document": "服務・休暇手続",
+      "kind": "直接",
+      "question": "休日に勤務する場合はどのような取扱いになりますか？",
+      "expectedHeading": "7 勤務時間外の対応 > 休日に勤務する場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "服務・休暇手続"
+    },
+    {
+      "id": 19,
+      "documentNo": "02",
+      "document": "服務・休暇手続",
+      "kind": "言い換え",
+      "question": "申請した休暇の予定が変わった場合はどうすればよいですか？",
+      "expectedHeading": "8 よくあるケース > 申請後に予定が変更になった場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "服務・休暇手続"
+    },
+    {
+      "id": 20,
+      "documentNo": "02",
+      "document": "服務・休暇手続",
+      "kind": "根拠なし",
+      "question": "今年度の修学旅行の宿泊先はどこですか？",
+      "expectedHeading": "5資料のいずれにも記載しない確認用質問",
+      "expectedMode": "insufficient",
+      "expectedSourceContains": ""
+    },
+    {
+      "id": 21,
+      "documentNo": "03",
+      "document": "文書・決裁・校務手続",
+      "kind": "直接",
+      "question": "文書を作成するときはどの様式を使いますか？",
+      "expectedHeading": "2 文書を作成するとき > 使用する様式",
+      "expectedMode": "answer",
+      "expectedSourceContains": "文書・決裁・校務手続"
+    },
+    {
+      "id": 22,
+      "documentNo": "03",
+      "document": "文書・決裁・校務手続",
+      "kind": "直接",
+      "question": "どのような文書に決裁が必要ですか？",
+      "expectedHeading": "3 決裁 > 決裁が必要な文書",
+      "expectedMode": "answer",
+      "expectedSourceContains": "文書・決裁・校務手続"
+    },
+    {
+      "id": 23,
+      "documentNo": "03",
+      "document": "文書・決裁・校務手続",
+      "kind": "直接",
+      "question": "決裁はどの順序で受けますか？",
+      "expectedHeading": "3 決裁 > 決裁の順序",
+      "expectedMode": "answer",
+      "expectedSourceContains": "文書・決裁・校務手続"
+    },
+    {
+      "id": 24,
+      "documentNo": "03",
+      "document": "文書・決裁・校務手続",
+      "kind": "言い換え",
+      "question": "この文書は、最終的に誰まで確認してもらえばよいですか？",
+      "expectedHeading": "3 決裁 > 最終決裁者",
+      "expectedMode": "answer",
+      "expectedSourceContains": "文書・決裁・校務手続"
+    },
+    {
+      "id": 25,
+      "documentNo": "03",
+      "document": "文書・決裁・校務手続",
+      "kind": "直接",
+      "question": "外部へ発送する文書の文書番号はどのように扱いますか？",
+      "expectedHeading": "4 外部へ発送する文書 > 文書番号",
+      "expectedMode": "answer",
+      "expectedSourceContains": "文書・決裁・校務手続"
+    },
+    {
+      "id": 26,
+      "documentNo": "03",
+      "document": "文書・決裁・校務手続",
+      "kind": "直接",
+      "question": "公印や押印が必要な場合の手続を教えてください。",
+      "expectedHeading": "4 外部へ発送する文書 > 公印・押印",
+      "expectedMode": "answer",
+      "expectedSourceContains": "文書・決裁・校務手続"
+    },
+    {
+      "id": 27,
+      "documentNo": "03",
+      "document": "文書・決裁・校務手続",
+      "kind": "直接",
+      "question": "校内文書は職員へどのように周知しますか？",
+      "expectedHeading": "5 校内文書 > 職員への周知方法",
+      "expectedMode": "answer",
+      "expectedSourceContains": "文書・決裁・校務手続"
+    },
+    {
+      "id": 28,
+      "documentNo": "03",
+      "document": "文書・決裁・校務手続",
+      "kind": "直接",
+      "question": "文書はどこに、どのくらいの期間保存しますか？",
+      "expectedHeading": "6 文書の保存 > 保存場所 / 保存期間",
+      "expectedMode": "answer",
+      "expectedSourceContains": "文書・決裁・校務手続"
+    },
+    {
+      "id": 29,
+      "documentNo": "03",
+      "document": "文書・決裁・校務手続",
+      "kind": "言い換え",
+      "question": "個人情報が入った文書は、どう保管して、最後はどう廃棄しますか？",
+      "expectedHeading": "7 個人情報を含む文書 > 保存方法 / 廃棄方法",
+      "expectedMode": "answer",
+      "expectedSourceContains": "文書・決裁・校務手続"
+    },
+    {
+      "id": 30,
+      "documentNo": "03",
+      "document": "文書・決裁・校務手続",
+      "kind": "根拠なし",
+      "question": "来月の給食献立を教えてください。",
+      "expectedHeading": "5資料のいずれにも記載しない確認用質問",
+      "expectedMode": "insufficient",
+      "expectedSourceContains": ""
+    },
+    {
+      "id": 31,
+      "documentNo": "04",
+      "document": "ICT・情報セキュリティ",
+      "kind": "直接",
+      "question": "校務用端末を校外へ持ち出してもよいですか？",
+      "expectedHeading": "2 校務用端末 > 校外への持ち出し",
+      "expectedMode": "answer",
+      "expectedSourceContains": "ICT・情報セキュリティ"
+    },
+    {
+      "id": 32,
+      "documentNo": "04",
+      "document": "ICT・情報セキュリティ",
+      "kind": "言い換え",
+      "question": "校務用端末を家に持ち帰って仕事をしても大丈夫ですか？",
+      "expectedHeading": "2 校務用端末 > 自宅での利用",
+      "expectedMode": "answer",
+      "expectedSourceContains": "ICT・情報セキュリティ"
+    },
+    {
+      "id": 33,
+      "documentNo": "04",
+      "document": "ICT・情報セキュリティ",
+      "kind": "直接",
+      "question": "パスワードを忘れた場合はどうすればよいですか？",
+      "expectedHeading": "3 アカウント・パスワード > パスワードを忘れた場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "ICT・情報セキュリティ"
+    },
+    {
+      "id": 34,
+      "documentNo": "04",
+      "document": "ICT・情報セキュリティ",
+      "kind": "直接",
+      "question": "自分のアカウントを他の職員と共有してもよいですか？",
+      "expectedHeading": "3 アカウント・パスワード > 他者とのアカウント共有",
+      "expectedMode": "answer",
+      "expectedSourceContains": "ICT・情報セキュリティ"
+    },
+    {
+      "id": 35,
+      "documentNo": "04",
+      "document": "ICT・情報セキュリティ",
+      "kind": "直接",
+      "question": "USBメモリは使用できますか？",
+      "expectedHeading": "4 USBメモリ等の外部媒体 > USBメモリの使用",
+      "expectedMode": "answer",
+      "expectedSourceContains": "ICT・情報セキュリティ"
+    },
+    {
+      "id": 36,
+      "documentNo": "04",
+      "document": "ICT・情報セキュリティ",
+      "kind": "直接",
+      "question": "個人情報を含むデータはどこに保存すればよいですか？",
+      "expectedHeading": "5 個人情報 > 個人情報を含むデータの保存",
+      "expectedMode": "answer",
+      "expectedSourceContains": "ICT・情報セキュリティ"
+    },
+    {
+      "id": 37,
+      "documentNo": "04",
+      "document": "ICT・情報セキュリティ",
+      "kind": "直接",
+      "question": "個人情報を含むデータを送信するときの注意点は何ですか？",
+      "expectedHeading": "5 個人情報 > 個人情報を含むデータの送信",
+      "expectedMode": "answer",
+      "expectedSourceContains": "ICT・情報セキュリティ"
+    },
+    {
+      "id": 38,
+      "documentNo": "04",
+      "document": "ICT・情報セキュリティ",
+      "kind": "言い換え",
+      "question": "生成AIには、どのような情報を入力してはいけませんか？",
+      "expectedHeading": "6 生成AI・外部サービス > 入力してはいけない情報",
+      "expectedMode": "answer",
+      "expectedSourceContains": "ICT・情報セキュリティ"
+    },
+    {
+      "id": 39,
+      "documentNo": "04",
+      "document": "ICT・情報セキュリティ",
+      "kind": "直接",
+      "question": "不審なメールを受信した場合はどうすればよいですか？",
+      "expectedHeading": "8 トラブル時の対応 > 不審なメールを受信した場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "ICT・情報セキュリティ"
+    },
+    {
+      "id": 40,
+      "documentNo": "04",
+      "document": "ICT・情報セキュリティ",
+      "kind": "根拠なし",
+      "question": "次回のPTA総会は何時からですか？",
+      "expectedHeading": "5資料のいずれにも記載しない確認用質問",
+      "expectedMode": "insufficient",
+      "expectedSourceContains": ""
+    },
+    {
+      "id": 41,
+      "documentNo": "05",
+      "document": "施設・備品・校内利用ルール",
+      "kind": "直接",
+      "question": "特別教室を利用するときの手続を教えてください。",
+      "expectedHeading": "2 施設利用 > 特別教室の利用",
+      "expectedMode": "answer",
+      "expectedSourceContains": "施設・備品・校内利用ルール"
+    },
+    {
+      "id": 42,
+      "documentNo": "05",
+      "document": "施設・備品・校内利用ルール",
+      "kind": "直接",
+      "question": "会議室を利用するときはどのように予約しますか？",
+      "expectedHeading": "2 施設利用 > 会議室の利用 / 利用予約",
+      "expectedMode": "answer",
+      "expectedSourceContains": "施設・備品・校内利用ルール"
+    },
+    {
+      "id": 43,
+      "documentNo": "05",
+      "document": "施設・備品・校内利用ルール",
+      "kind": "直接",
+      "question": "鍵はどこで、どのような手続で借りますか？",
+      "expectedHeading": "3 鍵の管理 > 鍵を借りる場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "施設・備品・校内利用ルール"
+    },
+    {
+      "id": 44,
+      "documentNo": "05",
+      "document": "施設・備品・校内利用ルール",
+      "kind": "直接",
+      "question": "借りた鍵はどのように返却しますか？",
+      "expectedHeading": "3 鍵の管理 > 鍵を返却する場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "施設・備品・校内利用ルール"
+    },
+    {
+      "id": 45,
+      "documentNo": "05",
+      "document": "施設・備品・校内利用ルール",
+      "kind": "言い換え",
+      "question": "鍵をなくしてしまったら、まずどうすればよいですか？",
+      "expectedHeading": "3 鍵の管理 > 鍵を紛失した場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "施設・備品・校内利用ルール"
+    },
+    {
+      "id": 46,
+      "documentNo": "05",
+      "document": "施設・備品・校内利用ルール",
+      "kind": "直接",
+      "question": "備品を借りる場合の手続を教えてください。",
+      "expectedHeading": "4 備品 > 備品を借りる場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "施設・備品・校内利用ルール"
+    },
+    {
+      "id": 47,
+      "documentNo": "05",
+      "document": "施設・備品・校内利用ルール",
+      "kind": "直接",
+      "question": "プロジェクターなどの機器を借りるにはどうすればよいですか？",
+      "expectedHeading": "5 ICT機器・視聴覚機器 > プロジェクター等の貸出",
+      "expectedMode": "answer",
+      "expectedSourceContains": "施設・備品・校内利用ルール"
+    },
+    {
+      "id": 48,
+      "documentNo": "05",
+      "document": "施設・備品・校内利用ルール",
+      "kind": "直接",
+      "question": "大量印刷やカラー印刷をする場合のルールはありますか？",
+      "expectedHeading": "6 印刷・コピー > 大量印刷の場合 / カラー印刷の場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "施設・備品・校内利用ルール"
+    },
+    {
+      "id": 49,
+      "documentNo": "05",
+      "document": "施設・備品・校内利用ルール",
+      "kind": "言い換え",
+      "question": "勤務時間外に学校へ入る場合は、どのような手続が必要ですか？",
+      "expectedHeading": "8 校舎利用 > 勤務時間外に校舎へ入る場合",
+      "expectedMode": "answer",
+      "expectedSourceContains": "施設・備品・校内利用ルール"
+    },
+    {
+      "id": 50,
+      "documentNo": "05",
+      "document": "施設・備品・校内利用ルール",
+      "kind": "根拠なし",
+      "question": "次回の職員会議は何時からですか？",
+      "expectedHeading": "5資料のいずれにも記載しない確認用質問",
+      "expectedMode": "insufficient",
+      "expectedSourceContains": ""
+    }
+  ]
+}
