@@ -86,7 +86,7 @@
     acceptanceProgressText:$('#acceptance-progress-text'),
     acceptanceAutoChecks:$('#acceptance-auto-checks'),
     acceptanceReadinessChecks:$('#acceptance-readiness-checks'),
-    acceptanceManualChecks:$('[data-acceptance-manual]'),
+    acceptanceManualChecks:$$('[data-acceptance-manual]'),
     usageAuthRequired:$('#usage-auth-required'),
     usageContent:$('#usage-content'),
     refreshUsage:$('#refresh-usage'),
