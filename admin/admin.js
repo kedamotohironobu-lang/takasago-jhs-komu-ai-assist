@@ -1819,6 +1819,34 @@
     }
   }
 
+  async function waitForAcceptanceRetrieval(query, attempts=6, delayMs=1200){
+    let last=null;
+    for(let i=0;i<attempts;i++){
+      if(i>0) await new Promise(resolve=>setTimeout(resolve,delayMs));
+      last=await authJson('/admin/rag/retrieval-test',{
+        method:'POST',
+        body:JSON.stringify({query})
+      });
+      if(last?.result?.hasUsableEvidence===true) return last;
+    }
+    return last;
+  }
+
+  async function waitForAcceptanceAnswer(query, attempts=4, delayMs=1200){
+    let last=null;
+    for(let i=0;i<attempts;i++){
+      if(i>0) await new Promise(resolve=>setTimeout(resolve,delayMs));
+      last=await authJson('/admin/rag/answer-test',{
+        method:'POST',
+        body:JSON.stringify({query})
+      });
+      const result=last?.result||{};
+      if(result.status==='answer' && result.aiCalled===true) return last;
+      if(result.status!=='insufficient') return last;
+    }
+    return last;
+  }
+
   async function runFinalAcceptanceSuite(){
     if(!state.authenticated){
       showToast('管理者ログインが必要です。');
@@ -1972,10 +2000,11 @@
       );
 
       setAcceptanceProgress('検索テスト','Hybrid検索とEvidence Gateを確認しています。',true);
-      const positiveSearch=await authJson('/admin/rag/retrieval-test',{
-        method:'POST',
-        body:JSON.stringify({query:ACCEPTANCE_POSITIVE_QUERY})
-      });
+      const positiveSearch=await waitForAcceptanceRetrieval(
+        ACCEPTANCE_POSITIVE_QUERY,
+        6,
+        1200
+      );
       const positiveResult=positiveSearch?.result||{};
       const positiveEvidence=Array.isArray(positiveResult?.evidence)?positiveResult.evidence:[];
       const evidenceOwn=positiveEvidence.some(ev=>
@@ -1990,10 +2019,11 @@
       );
 
       setAcceptanceProgress('AI回答テスト','根拠付き回答と出典カードを確認しています。',true);
-      const answerData=await authJson('/admin/rag/answer-test',{
-        method:'POST',
-        body:JSON.stringify({query:ACCEPTANCE_POSITIVE_QUERY})
-      });
+      const answerData=await waitForAcceptanceAnswer(
+        ACCEPTANCE_POSITIVE_QUERY,
+        4,
+        1200
+      );
       const answer=answerData?.result||{};
       const answerSources=Array.isArray(answer?.sources)?answer.sources:[];
       const answerSourceOwn=answerSources.some(src=>
