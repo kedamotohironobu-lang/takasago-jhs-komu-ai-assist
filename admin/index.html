@@ -26,6 +26,7 @@
         <button class="admin-nav-item" type="button" data-admin-view="drive">🔄 Drive同期</button>
         <button class="admin-nav-item" type="button" data-admin-view="search">🔎 RAG検索テスト</button>
         <button class="admin-nav-item" type="button" data-admin-view="acceptance">✅ 最終受入テスト</button>
+        <button class="admin-nav-item" type="button" data-admin-view="quality">🧪 FAQ品質テスト</button>
         <button class="admin-nav-item" type="button" data-admin-view="usage">📈 利用状況</button>
         <button class="admin-nav-item" type="button" data-admin-view="monthly">📄 月次レポート</button>
         <button class="admin-nav-item" type="button" data-admin-view="improvement">🛠 改善提案</button>
@@ -421,6 +422,101 @@
               <p>受入レポートはブラウザからJSON保存できます。すべての本番公開条件を満たした場合だけ、D1監査ログへ「合格」を記録できます。</p>
             </div>
             <button class="admin-primary" type="button" id="record-acceptance-result" disabled>合格結果を監査ログへ記録</button>
+          </article>
+        </div>
+      </section>
+
+      <section class="admin-view" data-view-panel="quality" hidden>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">QUALITY REGRESSION TEST</p>
+            <h2>STEP8-5 FAQ品質テスト（50問）</h2>
+          </div>
+          <div class="section-actions">
+            <button class="refresh-button" type="button" id="run-quality-suite">50問を一括実行</button>
+            <button class="refresh-button" type="button" id="download-quality-csv" disabled>結果CSV</button>
+            <button class="refresh-button" type="button" id="download-quality-json" disabled>結果JSON</button>
+          </div>
+        </div>
+
+        <div class="auth-required-panel" id="quality-auth-required">
+          <div class="locked-icon">🔒</div>
+          <h3>管理者ログインが必要です</h3>
+          <p>管理者認証後、50問を順番にRAGへ送信して検索・回答・根拠カードを確認します。</p>
+        </div>
+
+        <div id="quality-content" hidden>
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
+                <h3>自動評価の扱い</h3>
+                <p class="panel-description">自動判定は「回答できたか」「想定資料を根拠にしたか」「根拠なし質問を拒否したか」を確認します。回答本文の意味的な正確性は、最後に管理者が確認します。</p>
+              </div>
+              <span class="panel-badge accent">STEP8-5</span>
+            </div>
+            <div class="metric-grid">
+              <article class="metric-card">
+                <span class="metric-label">テスト数</span>
+                <strong class="metric-value" id="quality-total">50</strong>
+                <span class="metric-note">5資料 × 10問</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">自動PASS候補</span>
+                <strong class="metric-value" id="quality-pass">0</strong>
+                <span class="metric-note">構造・根拠条件を満たす</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">FAIL</span>
+                <strong class="metric-value" id="quality-fail">0</strong>
+                <span class="metric-note">資料・検索・回答を要確認</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">本文確認待ち</span>
+                <strong class="metric-value" id="quality-review">0</strong>
+                <span class="metric-note">回答ありのPASS候補</span>
+              </article>
+            </div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
+                <h3>実行状況</h3>
+                <p class="panel-description" id="quality-progress-text">まだ実行していません。</p>
+              </div>
+              <span class="panel-badge" id="quality-progress">未実施</span>
+            </div>
+            <div class="status-list">
+              <div><span>最終実行</span><strong id="quality-last-run">—</strong></div>
+              <div><span>判定上の注意</span><strong id="quality-note">5資料の本番登録後に実行してください。</strong></div>
+            </div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
+                <h3>50問の結果</h3>
+                <p class="panel-description">PASS候補でも回答本文は管理者が確認してください。FAIL時はEvidence Gateを緩めず、資料・見出し・版・チャンク・検索対象を先に確認します。</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>No.</th>
+                    <th>資料</th>
+                    <th>種別</th>
+                    <th>質問</th>
+                    <th>結果</th>
+                    <th>根拠資料</th>
+                    <th>自動判定</th>
+                  </tr>
+                </thead>
+                <tbody id="quality-body">
+                  <tr><td colspan="7">まだ実行していません。</td></tr>
+                </tbody>
+              </table>
+            </div>
           </article>
         </div>
       </section>
@@ -920,6 +1016,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step7-acceptance-fix4" defer></script>
+  <script src="admin.js?v=step8-5a" defer></script>
 </body>
 </html>
