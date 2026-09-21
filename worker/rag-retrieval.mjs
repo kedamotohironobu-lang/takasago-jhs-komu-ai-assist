@@ -265,6 +265,26 @@ function applyEvidenceGate(candidates) {
   const secondVectorScore = Number(vectorOrdered[1]?.vectorScore || 0);
   const vectorLead = Math.max(0, topVectorScore - secondVectorScore);
 
+  const corroborationCounts = new Map();
+  for (const item of candidates) {
+    if (!item.authoritative || !item.documentId) continue;
+    const vectorScore = Number(item.vectorScore || 0);
+    const vectorRank = Number(item.vectorRank || 0);
+    const ftsRank = Number(item.ftsRank || 0);
+    const qualifies =
+      Boolean(vectorRank) &&
+      Boolean(ftsRank) &&
+      vectorScore >= gate.corroboratedHybridMinVectorScore &&
+      vectorRank <= gate.corroboratedHybridMaxVectorRank &&
+      ftsRank <= gate.corroboratedHybridMaxFtsRank;
+    if (qualifies) {
+      corroborationCounts.set(
+        item.documentId,
+        (corroborationCounts.get(item.documentId) || 0) + 1
+      );
+    }
+  }
+
   return candidates.map(item => {
     if (!item.authoritative) {
       return {
@@ -285,6 +305,17 @@ function applyEvidenceGate(candidates) {
       vectorRank <= gate.hybridMaxVectorRank &&
       ftsRank <= gate.hybridMaxFtsRank;
 
+    const corroboratedHybridAccepted =
+      !hybridAccepted &&
+      Boolean(item.documentId) &&
+      Boolean(vectorRank) &&
+      Boolean(ftsRank) &&
+      vectorScore >= gate.corroboratedHybridMinVectorScore &&
+      vectorRank <= gate.corroboratedHybridMaxVectorRank &&
+      ftsRank <= gate.corroboratedHybridMaxFtsRank &&
+      Number(corroborationCounts.get(item.documentId) || 0) >=
+        gate.corroboratedHybridMinChunks;
+
     const vectorOnlyAccepted =
       vectorRank === 1 &&
       !ftsRank &&
@@ -293,13 +324,14 @@ function applyEvidenceGate(candidates) {
 
     let gateReason = 'below_threshold';
     if (hybridAccepted) gateReason = 'hybrid_agreement';
+    else if (corroboratedHybridAccepted) gateReason = 'hybrid_multi_chunk_agreement';
     else if (vectorOnlyAccepted) gateReason = 'strong_vector_only';
     else if (!vectorRank && ftsRank) gateReason = 'fts_only_not_sufficient';
     else if (vectorRank && !ftsRank) gateReason = 'vector_only_below_threshold';
 
     return {
       ...item,
-      accepted:hybridAccepted || vectorOnlyAccepted,
+      accepted:hybridAccepted || corroboratedHybridAccepted || vectorOnlyAccepted,
       gateReason
     };
   });
