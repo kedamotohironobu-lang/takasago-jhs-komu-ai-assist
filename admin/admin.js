@@ -93,7 +93,7 @@
     acceptanceProgressText:$('#acceptance-progress-text'),
     acceptanceAutoChecks:$('#acceptance-auto-checks'),
     acceptanceReadinessChecks:$('#acceptance-readiness-checks'),
-    acceptanceManualChecks:$('[data-acceptance-manual]'),
+    acceptanceManualChecks:$$('[data-acceptance-manual]'),
     qualityAuthRequired:$('#quality-auth-required'),
     qualityContent:$('#quality-content'),
     runQualitySuite:$('#run-quality-suite'),
