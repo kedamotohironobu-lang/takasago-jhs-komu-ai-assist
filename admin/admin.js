@@ -1018,6 +1018,45 @@
 
     try{
       const cases=await loadQualityCases();
+
+      // STEP8-6 preflight: 5つの想定資料が本番RAGで current / active / approved
+      // になるまで50問テストは開始しない。
+      await loadDocuments();
+      const expectedDocuments=[...new Set(
+        cases
+          .filter(item=>String(item?.expectedMode||'')==='answer')
+          .map(item=>String(item?.document||'').trim())
+          .filter(Boolean)
+      )];
+      const readyDocuments=(state.documents||[]).filter(doc=>
+        Boolean(doc?.isCurrent) &&
+        String(doc?.status||'')==='active' &&
+        String(doc?.approvalStatus||'')==='approved' &&
+        !doc?.deletedAt
+      );
+      const missingDocuments=expectedDocuments.filter(expected=>{
+        const target=normalizeQualityText(expected);
+        return !readyDocuments.some(doc=>{
+          const title=normalizeQualityText(doc?.title||'');
+          const fileName=normalizeQualityText(doc?.fileName||'');
+          return title.includes(target) || fileName.includes(target);
+        });
+      });
+
+      if(missingDocuments.length){
+        const message=
+          '50問テストはまだ開始できません。未登録または本番有効化前の資料: '+
+          missingDocuments.join(' / ');
+        if(nodes.qualityProgress) nodes.qualityProgress.textContent='資料登録待ち';
+        if(nodes.qualityProgressText) nodes.qualityProgressText.textContent=message;
+        setText(
+          'quality-note',
+          '5資料すべてを current / active / approved にしてから実行してください。'
+        );
+        showToast('本番FAQ資料5件の登録完了後に実行してください。',5200);
+        return;
+      }
+
       state.quality.running=true;
       state.quality.results=[];
       state.quality.lastReport=null;
