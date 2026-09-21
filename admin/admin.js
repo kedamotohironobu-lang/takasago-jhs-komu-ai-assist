@@ -1145,6 +1145,8 @@
         autoPassCandidates:results.filter(r=>r.autoPassed).length,
         failed:results.filter(r=>!r.autoPassed).length,
         semanticReviewRequired:results.filter(r=>r.reviewRequired).length,
+        retriedRequests:results.filter(r=>Number(r?.retryAttempts||0)>0).length,
+        totalRetryAttempts:results.reduce((sum,r)=>sum+Number(r?.retryAttempts||0),0),
         failureBreakdown:results.reduce((acc,r)=>{
           const key=String(r?.failureClass||'');
           if(key) acc[key]=(acc[key]||0)+1;
@@ -1158,6 +1160,39 @@
     return report;
   }
 
+  function isTransientQualityError(err){
+    const status=Number(err?.status||0);
+    const code=String(err?.code||'');
+    return [408,429,500,502,503,504].includes(status) ||
+      ['ALL_PROVIDERS_FAILED','RAG_ANSWER_TEST_FAILED'].includes(code);
+  }
+
+  async function runQualityAnswerTestWithRetry(testCase,maxAttempts=4){
+    let lastError=null;
+    for(let attempt=1;attempt<=maxAttempts;attempt++){
+      try{
+        const data=await authJson('/admin/rag/answer-test',{
+          method:'POST',
+          body:JSON.stringify({query:testCase.question})
+        });
+        return {data,attempts:attempt};
+      }catch(err){
+        const authExpired=
+          Number(err?.status||0)===401 ||
+          ['FAQ_ADMIN_UNAUTHORIZED','ADMIN_AUTH_REQUIRED','ADMIN_AUTH_FAILED'].includes(String(err?.code||''));
+        if(authExpired) throw err;
+        lastError=err;
+        if(!isTransientQualityError(err) || attempt>=maxAttempts) throw err;
+        const waitMs=Math.min(12000,1800*Math.pow(2,attempt-1));
+        if(nodes.qualityProgressText){
+          nodes.qualityProgressText.textContent=
+            'No.'+testCase.id+' は一時的なAPI混雑のため再試行します（'+attempt+'/'+maxAttempts+'）。';
+        }
+        await new Promise(resolve=>setTimeout(resolve,waitMs));
+      }
+    }
+    throw lastError || new Error('品質テストの再試行に失敗しました。');
+  }
   async function runQualitySuite(){
     if(!state.authenticated){
       showToast('管理者ログインが必要です。');
@@ -1235,11 +1270,9 @@
         const started=performance.now();
         let scored;
         try{
-          const data=await authJson('/admin/rag/answer-test',{
-            method:'POST',
-            body:JSON.stringify({query:testCase.question})
-          });
-          scored=scoreQualityCase(testCase,data?.result||{});
+          const run=await runQualityAnswerTestWithRetry(testCase,4);
+          scored=scoreQualityCase(testCase,run?.data?.result||{});
+          scored.retryAttempts=Math.max(0,Number(run?.attempts||1)-1);
         }catch(err){
           const authExpired=
             Number(err?.status||0)===401 ||
@@ -1259,13 +1292,14 @@
             return;
           }
           scored=scoreQualityCase(testCase,null,err?.message||'RAG品質テスト実行エラー');
+          scored.retryAttempts=0;
         }
         scored.latencyMs=Math.round(performance.now()-started);
         state.quality.results.push(scored);
         renderQualityResults();
 
         if(index<cases.length-1){
-          await new Promise(resolve=>setTimeout(resolve,900));
+          await new Promise(resolve=>setTimeout(resolve,1800));
         }
       }
 
@@ -1317,7 +1351,7 @@
     const report=state.quality.lastReport||buildQualityReport();
     const header=[
       'No','資料No','資料','種別','質問','想定見出し','期待モード',
-      '結果status','回答','根拠資料','AI呼出','provider','自動判定','原因分類','推奨対応','本文確認必要','詳細','latencyMs'
+      '結果status','回答','根拠資料','AI呼出','provider','自動判定','原因分類','推奨対応','再試行回数','本文確認必要','詳細','latencyMs'
     ];
     const lines=[header.map(qualityCsvCell).join(',')];
     for(const row of report.rows){
@@ -1325,7 +1359,7 @@
       lines.push([
         row.id,row.documentNo,row.document,row.kind,row.question,row.expectedHeading,row.expectedMode,
         r.status||'',r.answer||'',Array.isArray(r.sourceNames)?r.sourceNames.join(' / '):'',
-        r.aiCalled?'yes':'no',r.provider||'',r.autoJudge||'未実施',r.failureLabel||'',r.recommendation||'',
+        r.aiCalled?'yes':'no',r.provider||'',r.autoJudge||'未実施',r.failureLabel||'',r.recommendation||'',Number(r.retryAttempts||0),
         r.reviewRequired?'yes':'no',r.detail||'',r.latencyMs||''
       ].map(qualityCsvCell).join(','));
     }
