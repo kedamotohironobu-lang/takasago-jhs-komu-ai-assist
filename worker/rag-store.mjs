@@ -233,6 +233,22 @@ async function stageRagDocument(env, payload, actorId = 'faq-admin') {
   );
   if (!category) throw fail('INVALID_CATEGORY', '指定された資料分類が見つかりません。');
 
+  const existingProcessing = await queryOne(db, `
+    SELECT document_id,revision_no,title,status,created_at
+    FROM documents
+    WHERE source_id=? AND status='processing' AND is_current=0
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, valid.sourceId);
+  if (existingProcessing?.document_id) {
+    throw fail(
+      'SOURCE_PROCESSING_EXISTS',
+      '同じDrive資料の未完了登録があります。先に「処理中を破棄」または「処理を続ける」を完了してください。',
+      409,
+      { documentId:existingProcessing.document_id }
+    );
+  }
+
   const additionalTextBytes = valid.chunked.chunks.reduce((sum, c) => sum + byteLength(c.text), 0);
   const capacity = await getRagCapacity(env, valid.chunked.chunks.length, additionalTextBytes);
   if (capacity.vector.usedDimensions > capacity.vector.limitDimensions) {
@@ -1417,6 +1433,76 @@ async function runRagMaintenance(env, actorId = 'system-maintenance') {
   };
 }
 
+async function discardProcessingRagDocument(env, documentId, actorId = 'faq-admin') {
+  const db = requireDb(env);
+  const vector = requireVector(env);
+
+  const doc = await queryOne(db, `
+    SELECT document_id,source_id,revision_no,is_current,title,status
+    FROM documents
+    WHERE document_id=?
+  `, documentId);
+  if (!doc) throw fail('DOCUMENT_NOT_FOUND', '資料が見つかりません。', 404);
+  if (Number(doc.is_current || 0) === 1 || String(doc.status || '') !== 'processing') {
+    throw fail(
+      'DISCARD_PROCESSING_ONLY',
+      '安全のため、currentではないprocessing資料だけを破棄できます。',
+      409
+    );
+  }
+
+  const rows = await db.prepare(
+    "SELECT vector_id FROM chunks WHERE document_id=? AND vector_id IS NOT NULL"
+  ).bind(documentId).all();
+  const vectorIds = (rows?.results || []).map(r => r.vector_id).filter(Boolean);
+  const logId = `log-${crypto.randomUUID()}`;
+
+  await db.batch([
+    db.prepare("DELETE FROM chunks_fts WHERE document_id=?").bind(documentId),
+    db.prepare("DELETE FROM usage_sources WHERE document_id=?").bind(documentId),
+    db.prepare("DELETE FROM sync_jobs WHERE document_id=?").bind(documentId),
+    db.prepare("DELETE FROM chunks WHERE document_id=?").bind(documentId),
+    db.prepare("DELETE FROM documents WHERE document_id=?").bind(documentId),
+    db.prepare(`
+      INSERT INTO audit_logs (
+        log_id,occurred_at,actor_id,action,entity_type,entity_id,summary,metadata_json
+      )
+      VALUES (?,CURRENT_TIMESTAMP,?,'processing_document_discarded','document',?,?,?)
+    `).bind(
+      logId,
+      actorId,
+      documentId,
+      `処理中資料「${doc.title}」を破棄`,
+      JSON.stringify({
+        sourceId:doc.source_id,
+        revisionNo:Number(doc.revision_no || 1),
+        vectorCount:vectorIds.length
+      })
+    )
+  ]);
+
+  let mutationId = null;
+  let vectorCleanupWarning = '';
+  if (vectorIds.length) {
+    try {
+      const mutation = await vector.deleteByIds(vectorIds.slice(0, 1000));
+      mutationId = mutation?.mutationId || null;
+    } catch {
+      vectorCleanupWarning = 'VECTOR_CLEANUP_PENDING';
+    }
+  }
+
+  return {
+    ok:true,
+    documentId,
+    sourceId:doc.source_id,
+    discarded:true,
+    deletedVectorCount:vectorIds.length,
+    mutationId,
+    vectorCleanupWarning
+  };
+}
+
 async function cleanupRagTestDocument(env, documentId, actorId = 'faq-admin') {
   const db = requireDb(env);
   const vector = requireVector(env);
@@ -1565,6 +1651,7 @@ export {
   retryRagJob,
   buildRagBackupManifest,
   runRagMaintenance,
+  discardProcessingRagDocument,
   cleanupRagTestDocument,
   cleanupRagTestSource
 };
