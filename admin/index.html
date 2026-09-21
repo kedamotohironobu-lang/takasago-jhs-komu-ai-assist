@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="admin.css?v=step8-5a">
+  <link rel="stylesheet" href="admin.css?v=step8-8a">
 </head>
 <body>
   <div class="admin-shell">
@@ -499,6 +499,51 @@
           <article class="panel wide">
             <div class="panel-head">
               <div>
+                <h3>STEP8-8 FAIL原因分析</h3>
+                <p class="panel-description">FAILを原因別に自動分類します。Evidence Gateは自動で緩めません。先に資料・検索・AI判定・認証を切り分けます。</p>
+              </div>
+              <span class="panel-badge accent">STEP8-8</span>
+            </div>
+            <div class="quality-cause-grid">
+              <article class="quality-cause-card">
+                <span>検索未到達</span>
+                <strong id="quality-cause-retrieval">0</strong>
+                <small>想定資料が上位候補にない</small>
+              </article>
+              <article class="quality-cause-card">
+                <span>Evidence Gate</span>
+                <strong id="quality-cause-gate">0</strong>
+                <small>想定資料は候補だが不採用</small>
+              </article>
+              <article class="quality-cause-card">
+                <span>AI・資料内容</span>
+                <strong id="quality-cause-ai">0</strong>
+                <small>根拠ありでも回答できない</small>
+              </article>
+              <article class="quality-cause-card">
+                <span>根拠資料違い</span>
+                <strong id="quality-cause-source">0</strong>
+                <small>回答したが想定資料ではない</small>
+              </article>
+              <article class="quality-cause-card">
+                <span>根拠なし誤回答</span>
+                <strong id="quality-cause-negative">0</strong>
+                <small>拒否すべき質問へ回答</small>
+              </article>
+              <article class="quality-cause-card">
+                <span>API・認証/通信</span>
+                <strong id="quality-cause-api">0</strong>
+                <small>品質判定対象外の実行エラー</small>
+              </article>
+            </div>
+            <div class="quality-analysis-note" id="quality-analysis-note">
+              50問テスト完了後、FAIL原因と優先対応をここに表示します。
+            </div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
                 <h3>50問の結果</h3>
                 <p class="panel-description">PASS候補でも回答本文は管理者が確認してください。FAIL時はEvidence Gateを緩めず、資料・見出し・版・チャンク・検索対象を先に確認します。</p>
               </div>
@@ -514,10 +559,11 @@
                     <th>結果</th>
                     <th>根拠資料</th>
                     <th>自動判定</th>
+                    <th>原因</th>
                   </tr>
                 </thead>
                 <tbody id="quality-body">
-                  <tr><td colspan="7">まだ実行していません。</td></tr>
+                  <tr><td colspan="8">まだ実行していません。</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1020,6 +1066,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step8-7-authfix1" defer></script>
+  <script src="admin.js?v=step8-8a" defer></script>
 </body>
 </html>
