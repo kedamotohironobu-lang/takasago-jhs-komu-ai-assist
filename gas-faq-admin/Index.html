@@ -177,8 +177,8 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>資料名</th><th>カテゴリ</th><th>版</th><th>状態</th><th>承認</th><th>チャンク</th></tr></thead>
-          <tbody id="registeredRows"><tr><td colspan="6">読み込み待ちです。</td></tr></tbody>
+          <thead><tr><th>資料名</th><th>カテゴリ</th><th>版</th><th>状態</th><th>承認</th><th>チャンク</th><th>操作</th></tr></thead>
+          <tbody id="registeredRows"><tr><td colspan="7">読み込み待ちです。</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -487,6 +487,8 @@
 
   async function registerSelected(){
     if(!state.selectedFile){toast('資料を選択してください。');return}
+    const registerButton=document.getElementById('registerBtn');
+    if(registerButton) registerButton.disabled=true;
     if(!document.getElementById('approved').checked){
       toast('承認済み資料であることを確認してください。');return;
     }
@@ -531,6 +533,7 @@
     }catch(e){
       showProgress('登録エラー',e.message,false);
       toast(e.message);
+      if(document.getElementById('registerBtn')) document.getElementById('registerBtn').disabled=false;
     }finally{busy(false)}
   }
 
@@ -585,22 +588,58 @@
       const rows=await gs('listRagDocumentsStep5');
       const tbody=document.getElementById('registeredRows');
       if(!rows.length){
-        tbody.innerHTML='<tr><td colspan="6">登録資料はありません。</td></tr>';
+        tbody.innerHTML='<tr><td colspan="7">登録資料はありません。</td></tr>';
         return;
       }
-      tbody.innerHTML=rows.map(d=>
-        '<tr>'+
+      tbody.innerHTML=rows.map(d=>{
+        const action=d.status==='processing' && !d.isCurrent
+          ? '<button class="secondary" onclick="discardProcessingDocument(\''+escapeHtml(d.documentId||'')+'\',\''+escapeHtml(d.title||d.fileName||'処理中資料')+'\')">処理中を破棄</button>'
+          : '<span class="small">—</span>';
+        return '<tr>'+
           '<td><strong>'+escapeHtml(d.title||d.fileName||'無題')+'</strong><div class="small">'+escapeHtml(d.sourceId||'')+'</div></td>'+
           '<td>'+escapeHtml(d.categoryName||'-')+'</td>'+
           '<td>'+escapeHtml(d.versionLabel||('rev '+d.revisionNo))+'</td>'+
           '<td><span class="badge '+(d.status==='active'?'ok':'warn')+'">'+escapeHtml(d.status||'-')+'</span></td>'+
           '<td>'+escapeHtml(d.approvalStatus||'-')+'</td>'+
           '<td>'+Number(d.activeChunkCount||0).toLocaleString()+' / '+Number(d.chunkCount||0).toLocaleString()+'</td>'+
-        '</tr>'
-      ).join('');
+          '<td>'+action+'</td>'+
+        '</tr>';
+      }).join('');
     }catch(e){
-      document.getElementById('registeredRows').innerHTML='<tr><td colspan="6">'+escapeHtml(e.message)+'</td></tr>';
+      document.getElementById('registeredRows').innerHTML='<tr><td colspan="7">'+escapeHtml(e.message)+'</td></tr>';
     }finally{if(showBusy)busy(false)}
+  }
+
+  async function discardProcessingDocument(documentId,title){
+    if(!documentId) return;
+    if(!confirm(
+      '未完了の処理中登録を破棄します。\n\n'+title+
+      '\n\nactive資料やDrive原本は削除しません。よろしいですか？'
+    )) return;
+
+    busy(true);
+    try{
+      const result=await gs('discardProcessingRagDocumentStep5',documentId);
+      toast(
+        result&&result.vectorCleanupWarning
+          ? 'D1の処理中登録を破棄しました。Vectorize cleanupは後続確認が必要です。'
+          : '処理中登録を安全に破棄しました。'
+      );
+      if(state.currentDocumentId===documentId){
+        state.currentDocumentId='';
+        document.getElementById('continueBtn').style.display='none';
+        document.getElementById('progressBox').style.display='none';
+      }
+      await Promise.allSettled([
+        loadRegistered(false),
+        loadDriveFiles(false),
+        reloadStatusOnly()
+      ]);
+    }catch(e){
+      toast(e.message||'処理中登録を破棄できませんでした。');
+    }finally{
+      busy(false);
+    }
   }
 
   async function loadMaintenanceStatus(showBusy=true){
