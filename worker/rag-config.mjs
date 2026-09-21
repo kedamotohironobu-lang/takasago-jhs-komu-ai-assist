@@ -28,6 +28,12 @@ const RAG_CONFIG = Object.freeze({
       hybridMinVectorScore: 0.75,
       hybridMaxVectorRank: 3,
       hybridMaxFtsRank: 3,
+      // 実校データ校正: 同一資料内で複数チャンクがVector + FTSの両方で
+      // 上位一致した場合のみ、0.65以上を補助的に採用する。
+      corroboratedHybridMinVectorScore: 0.65,
+      corroboratedHybridMaxVectorRank: 3,
+      corroboratedHybridMaxFtsRank: 3,
+      corroboratedHybridMinChunks: 2,
       vectorOnlyMinScore: 0.82,
       vectorOnlyMinLead: 0.08
     })
