@@ -12,6 +12,13 @@
     improvement:null,
     improvementActions:null,
     monthlyReport:null,
+    quality:{
+      cases:[],
+      results:[],
+      running:false,
+      lastReport:null,
+      lastRunAt:''
+    },
     acceptance:{
       running:false,
       autoChecks:[],
@@ -86,7 +93,15 @@
     acceptanceProgressText:$('#acceptance-progress-text'),
     acceptanceAutoChecks:$('#acceptance-auto-checks'),
     acceptanceReadinessChecks:$('#acceptance-readiness-checks'),
-    acceptanceManualChecks:$$('[data-acceptance-manual]'),
+    acceptanceManualChecks:$('[data-acceptance-manual]'),
+    qualityAuthRequired:$('#quality-auth-required'),
+    qualityContent:$('#quality-content'),
+    runQualitySuite:$('#run-quality-suite'),
+    downloadQualityCsv:$('#download-quality-csv'),
+    downloadQualityJson:$('#download-quality-json'),
+    qualityBody:$('#quality-body'),
+    qualityProgress:$('#quality-progress'),
+    qualityProgressText:$('#quality-progress-text'),
     usageAuthRequired:$('#usage-auth-required'),
     usageContent:$('#usage-content'),
     refreshUsage:$('#refresh-usage'),
@@ -216,6 +231,11 @@
     if(nodes.driveContent) nodes.driveContent.hidden=!unlocked;
     if(nodes.acceptanceAuthRequired) nodes.acceptanceAuthRequired.hidden=unlocked;
     if(nodes.acceptanceContent) nodes.acceptanceContent.hidden=!unlocked;
+    if(nodes.qualityAuthRequired) nodes.qualityAuthRequired.hidden=unlocked;
+    if(nodes.qualityContent) nodes.qualityContent.hidden=!unlocked;
+    if(nodes.runQualitySuite) nodes.runQualitySuite.disabled=!unlocked || state.quality.running;
+    if(nodes.downloadQualityCsv) nodes.downloadQualityCsv.disabled=!unlocked || !state.quality.lastReport;
+    if(nodes.downloadQualityJson) nodes.downloadQualityJson.disabled=!unlocked || !state.quality.lastReport;
     if(nodes.usageAuthRequired) nodes.usageAuthRequired.hidden=unlocked;
     if(nodes.usageContent) nodes.usageContent.hidden=!unlocked;
     if(nodes.refreshUsage) nodes.refreshUsage.disabled=!unlocked;
@@ -817,6 +837,295 @@
     }finally{
       if(nodes.cleanupAdminTest) nodes.cleanupAdminTest.disabled=false;
     }
+  }
+
+  function normalizeQualityText(value){
+    return String(value||'')
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[\s_\-‐‑‒–—―]+/g,'');
+  }
+
+  function clipQualityText(value,max=150){
+    const text=String(value||'').replace(/\s+/g,' ').trim();
+    return text.length>max ? text.slice(0,max)+'…' : text;
+  }
+
+  async function loadQualityCases(){
+    if(state.quality.cases.length) return state.quality.cases;
+    const res=await fetch('quality-test-cases.json',{cache:'no-store'});
+    if(!res.ok) throw new Error('50問テストセットを読み込めませんでした。');
+    const data=await res.json();
+    const cases=Array.isArray(data?.cases)?data.cases:[];
+    if(cases.length!==50) throw new Error('50問テストセットの件数が正しくありません。');
+    state.quality.cases=cases;
+    setText('quality-total',cases.length);
+    renderQualityResults();
+    return cases;
+  }
+
+  function scoreQualityCase(testCase,result,errorMessage=''){
+    if(errorMessage){
+      return {
+        testId:testCase.id,
+        status:'error',
+        answer:'',
+        aiCalled:false,
+        provider:'',
+        reason:errorMessage,
+        sources:[],
+        sourceNames:[],
+        autoPassed:false,
+        autoJudge:'FAIL',
+        reviewRequired:false,
+        detail:'API実行エラー'
+      };
+    }
+
+    const sources=Array.isArray(result?.sources)?result.sources:[];
+    const sourceNames=sources.map(src=>String(src?.title||src?.fileName||'')).filter(Boolean);
+    const expectedMode=String(testCase?.expectedMode||'answer');
+    let autoPassed=false;
+    let detail='';
+
+    if(expectedMode==='insufficient'){
+      autoPassed=
+        result?.status==='insufficient' &&
+        result?.aiCalled===false &&
+        sources.length===0;
+      detail=autoPassed
+        ? 'Evidence Gateで停止・AI未呼び出し'
+        : '根拠なし質問への拒否挙動を確認してください';
+    }else{
+      const expected=normalizeQualityText(testCase?.expectedSourceContains||'');
+      const sourceOk=Boolean(expected) && sourceNames.some(name=>
+        normalizeQualityText(name).includes(expected)
+      );
+      autoPassed=
+        result?.status==='answer' &&
+        result?.aiCalled===true &&
+        Boolean(String(result?.answer||'').trim()) &&
+        sourceOk;
+      detail=autoPassed
+        ? '回答あり・想定資料を根拠に採用'
+        : !sourceOk
+          ? '想定資料が根拠カードにありません'
+          : '回答状態を確認してください';
+    }
+
+    return {
+      testId:testCase.id,
+      status:String(result?.status||''),
+      answer:String(result?.answer||''),
+      aiCalled:Boolean(result?.aiCalled),
+      provider:String(result?.provider||''),
+      model:String(result?.model||''),
+      reason:String(result?.reason||''),
+      sources,
+      sourceNames,
+      autoPassed,
+      autoJudge:autoPassed?'PASS候補':'FAIL',
+      reviewRequired:autoPassed && expectedMode==='answer',
+      detail
+    };
+  }
+
+  function renderQualityResults(){
+    if(!nodes.qualityBody) return;
+    const cases=state.quality.cases||[];
+    const results=new Map((state.quality.results||[]).map(item=>[Number(item.testId),item]));
+
+    if(!cases.length){
+      nodes.qualityBody.innerHTML='<tr><td colspan="7">テストセットを読み込んでいます。</td></tr>';
+      return;
+    }
+
+    nodes.qualityBody.innerHTML=cases.map(testCase=>{
+      const r=results.get(Number(testCase.id));
+      const resultText=!r
+        ? '未実施'
+        : r.status==='error'
+          ? clipQualityText(r.reason||'実行エラー',120)
+          : (r.status==='insufficient'
+              ? '登録資料では確認できません。'
+              : clipQualityText(r.answer,150));
+      const sourceText=!r
+        ? '—'
+        : (r.sourceNames?.length ? r.sourceNames.join(' / ') : 'なし');
+      const judge=!r ? '未実施' : r.autoJudge;
+      const judgeClass=!r ? '' : (r.autoPassed?'ok':'error');
+
+      return `
+        <tr>
+          <td>${Number(testCase.id)}</td>
+          <td><strong>${escapeHtml(testCase.documentNo+' '+testCase.document)}</strong></td>
+          <td>${escapeHtml(testCase.kind)}</td>
+          <td>${escapeHtml(testCase.question)}</td>
+          <td>${escapeHtml(resultText)}</td>
+          <td>${escapeHtml(sourceText)}</td>
+          <td><span class="panel-badge ${judgeClass}">${escapeHtml(judge)}</span></td>
+        </tr>
+      `;
+    }).join('');
+
+    const completed=state.quality.results.length;
+    const passed=state.quality.results.filter(r=>r.autoPassed).length;
+    const failed=state.quality.results.filter(r=>!r.autoPassed).length;
+    const review=state.quality.results.filter(r=>r.reviewRequired).length;
+
+    setText('quality-pass',passed);
+    setText('quality-fail',failed);
+    setText('quality-review',review);
+
+    if(nodes.qualityProgress && !state.quality.running){
+      nodes.qualityProgress.textContent=completed===0?'未実施':(completed===cases.length?'完了':completed+'/'+cases.length);
+    }
+  }
+
+  function buildQualityReport(){
+    const cases=state.quality.cases||[];
+    const results=state.quality.results||[];
+    const byId=new Map(results.map(item=>[Number(item.testId),item]));
+    const rows=cases.map(testCase=>({
+      ...testCase,
+      result:byId.get(Number(testCase.id))||null
+    }));
+    const report={
+      schema:'takasago-jhs-rag-quality-report-v1',
+      step:'STEP8-5',
+      generatedAt:new Date().toISOString(),
+      lastRunAt:state.quality.lastRunAt||'',
+      summary:{
+        total:cases.length,
+        completed:results.length,
+        autoPassCandidates:results.filter(r=>r.autoPassed).length,
+        failed:results.filter(r=>!r.autoPassed).length,
+        semanticReviewRequired:results.filter(r=>r.reviewRequired).length
+      },
+      note:'自動PASS候補は構造・根拠・Evidence Gateの機械判定です。回答本文の意味的正確性は管理者確認が必要です。',
+      rows
+    };
+    state.quality.lastReport=report;
+    return report;
+  }
+
+  async function runQualitySuite(){
+    if(!state.authenticated){
+      showToast('管理者ログインが必要です。');
+      return;
+    }
+    if(state.quality.running) return;
+
+    try{
+      const cases=await loadQualityCases();
+      state.quality.running=true;
+      state.quality.results=[];
+      state.quality.lastReport=null;
+      state.quality.lastRunAt='';
+      renderProtectedViews();
+      renderQualityResults();
+
+      if(nodes.qualityProgress) nodes.qualityProgress.textContent='実行中';
+      if(nodes.qualityProgressText) nodes.qualityProgressText.textContent='50問を順番に確認しています。画面を閉じずにお待ちください。';
+      setText('quality-last-run','実行中');
+
+      for(let index=0;index<cases.length;index++){
+        const testCase=cases[index];
+        if(nodes.qualityProgress) nodes.qualityProgress.textContent=(index+1)+' / '+cases.length;
+        if(nodes.qualityProgressText){
+          nodes.qualityProgressText.textContent='No.'+testCase.id+'「'+testCase.question+'」を確認しています。';
+        }
+
+        const started=performance.now();
+        let scored;
+        try{
+          const data=await authJson('/admin/rag/answer-test',{
+            method:'POST',
+            body:JSON.stringify({query:testCase.question})
+          });
+          scored=scoreQualityCase(testCase,data?.result||{});
+        }catch(err){
+          scored=scoreQualityCase(testCase,null,err?.message||'RAG品質テスト実行エラー');
+        }
+        scored.latencyMs=Math.round(performance.now()-started);
+        state.quality.results.push(scored);
+        renderQualityResults();
+
+        if(index<cases.length-1){
+          await new Promise(resolve=>setTimeout(resolve,900));
+        }
+      }
+
+      state.quality.lastRunAt=new Date().toISOString();
+      buildQualityReport();
+      const failed=state.quality.results.filter(r=>!r.autoPassed).length;
+      const passed=state.quality.results.filter(r=>r.autoPassed).length;
+      if(nodes.qualityProgress) nodes.qualityProgress.textContent=failed===0?'自動条件クリア':'要確認';
+      if(nodes.qualityProgressText){
+        nodes.qualityProgressText.textContent=
+          '実行完了：PASS候補 '+passed+' / '+cases.length+'、FAIL '+failed+'。PASS候補の回答本文を管理者が確認してください。';
+      }
+      setText('quality-last-run',new Date().toLocaleString('ja-JP'));
+      setText(
+        'quality-note',
+        failed===0
+          ? '構造条件はすべてクリア。回答本文の最終確認を行ってください。'
+          : 'FAILはEvidence Gateを緩めず、資料・見出し・版・検索対象を確認してください。'
+      );
+      showToast('STEP8-5 50問品質テストが完了しました。',4200);
+    }finally{
+      state.quality.running=false;
+      renderProtectedViews();
+      renderQualityResults();
+    }
+  }
+
+  function downloadQualityJson(){
+    const report=state.quality.lastReport||buildQualityReport();
+    const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='takasago-jhs-rag-quality-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    showToast('品質テスト結果JSONを保存しました。');
+  }
+
+  function qualityCsvCell(value){
+    let text=String(value??'').replace(/\r?\n/g,' ');
+    if(/^[=+\-@]/.test(text)) text="'"+text;
+    return '"'+text.replace(/"/g,'""')+'"';
+  }
+
+  function downloadQualityCsv(){
+    const report=state.quality.lastReport||buildQualityReport();
+    const header=[
+      'No','資料No','資料','種別','質問','想定見出し','期待モード',
+      '結果status','回答','根拠資料','AI呼出','provider','自動判定','本文確認必要','詳細','latencyMs'
+    ];
+    const lines=[header.map(qualityCsvCell).join(',')];
+    for(const row of report.rows){
+      const r=row.result||{};
+      lines.push([
+        row.id,row.documentNo,row.document,row.kind,row.question,row.expectedHeading,row.expectedMode,
+        r.status||'',r.answer||'',Array.isArray(r.sourceNames)?r.sourceNames.join(' / '):'',
+        r.aiCalled?'yes':'no',r.provider||'',r.autoJudge||'未実施',r.reviewRequired?'yes':'no',
+        r.detail||'',r.latencyMs||''
+      ].map(qualityCsvCell).join(','));
+    }
+    const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='takasago-jhs-rag-quality-'+new Date().toISOString().replace(/[:.]/g,'-')+'.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    showToast('品質テスト結果CSVを保存しました。');
   }
 
   async function runRagTest(){
@@ -2394,6 +2703,9 @@
     }
   });
   nodes.runMaintenance?.addEventListener('click',runMaintenanceNowAdmin);
+  nodes.runQualitySuite?.addEventListener('click',runQualitySuite);
+  nodes.downloadQualityCsv?.addEventListener('click',downloadQualityCsv);
+  nodes.downloadQualityJson?.addEventListener('click',downloadQualityJson);
   nodes.runRagTest?.addEventListener('click',runRagTest);
   nodes.registerAdminTest?.addEventListener('click',registerAdminSyntheticTest);
   nodes.cleanupAdminTest?.addEventListener('click',cleanupAdminSyntheticTest);
@@ -2418,6 +2730,11 @@
     state.improvement=null;
     state.improvementActions=null;
     state.monthlyReport=null;
+    state.quality.results=[];
+    state.quality.running=false;
+    state.quality.lastReport=null;
+    state.quality.lastRunAt='';
+    renderQualityResults();
     renderAuthState();
     renderGoogleButton();
     showToast('ログアウトしました。');
@@ -2433,6 +2750,10 @@
   const existingTestId=sessionStorage.getItem('step58AdminTestDocumentId');
   if(existingTestId && nodes.cleanupAdminTest) nodes.cleanupAdminTest.hidden=false;
 
+  loadQualityCases().catch(err=>{
+    console.warn('quality test cases load failed',err);
+    if(nodes.qualityProgressText) nodes.qualityProgressText.textContent='50問テストセットを読み込めませんでした。';
+  });
   initializeAdminAuth();
   refreshAll();
 })();
