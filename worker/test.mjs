@@ -36,7 +36,7 @@ let res=await worker.fetch(new Request('https://x/health'),{});
 eq(res.status,200);
 let health=await res.json();
 eq(health.ok,true);
-eq(health.version,'6.9.2');
+eq(health.version,'6.9.4');
 
 // STEP6 operational schema: runtime must verify migrated tables without executing DDL.
 {
@@ -274,6 +274,66 @@ console.log(`STEP6-9 core unit/integration tests: ${n} assertions passed`);
   ]);
   eq(negative[0].accepted,false);
   eq(negative[1].accepted,false);
+
+  // Real-school calibration pattern:
+  // the same authoritative document has multiple chunks that independently rank
+  // in both Vector and FTS. This should be accepted even when vector scores are
+  // below the strict 0.75 hybrid threshold, while vector-only evidence stays strict.
+  const multiChunkHybrid = applyEvidenceGate([
+    {
+      chunkId:'c-lock-1',
+      documentId:'doc-facilities',
+      authoritative:true,
+      vectorRank:1,
+      vectorScore:0.6842,
+      ftsRank:2,
+      ftsScore:-0.001,
+      rrfScore:0.03252,
+      fusedRank:1
+    },
+    {
+      chunkId:'c-lock-2',
+      documentId:'doc-facilities',
+      authoritative:true,
+      vectorRank:3,
+      vectorScore:0.6542,
+      ftsRank:1,
+      ftsScore:-0.002,
+      rrfScore:0.03227,
+      fusedRank:2
+    },
+    {
+      chunkId:'c-lock-vector-only',
+      documentId:'doc-facilities',
+      authoritative:true,
+      vectorRank:2,
+      vectorScore:0.6675,
+      ftsRank:null,
+      ftsScore:null,
+      rrfScore:0.01613,
+      fusedRank:3
+    }
+  ]);
+  eq(multiChunkHybrid[0].accepted,true);
+  eq(multiChunkHybrid[0].gateReason,'hybrid_multi_chunk_agreement');
+  eq(multiChunkHybrid[1].accepted,true);
+  eq(multiChunkHybrid[1].gateReason,'hybrid_multi_chunk_agreement');
+  eq(multiChunkHybrid[2].accepted,false);
+
+  const oneWeakHybrid = applyEvidenceGate([
+    {
+      chunkId:'c-one-weak',
+      documentId:'doc-one-weak',
+      authoritative:true,
+      vectorRank:1,
+      vectorScore:0.68,
+      ftsRank:1,
+      ftsScore:-0.001,
+      rrfScore:0.0327,
+      fusedRank:1
+    }
+  ]);
+  eq(oneWeakHybrid[0].accepted,false);
 
   const evidence = buildEvidence([
     {
