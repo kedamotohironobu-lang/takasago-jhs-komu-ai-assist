@@ -81,6 +81,8 @@ button{cursor:pointer}
 .panel-head h3,.panel h3{margin:0;font-size:19px}
 .panel-badge{padding:5px 9px;border-radius:999px;background:#edf4f8;color:#4a6b82;font-size:11px;font-weight:900}
 .panel-badge.accent{background:#e7f2ff;color:#1c65a2}
+.panel-badge.ok{background:#e7f6ef;color:#17724f}
+.panel-badge.error{background:#fdecec;color:#a33d3a}
 .status-list{display:grid}
 .status-list>div{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:11px 0;border-top:1px solid #edf2f5}
 .status-list>div:first-child{border-top:0}
