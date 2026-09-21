@@ -102,6 +102,7 @@
     qualityBody:$('#quality-body'),
     qualityProgress:$('#quality-progress'),
     qualityProgressText:$('#quality-progress-text'),
+    qualityAnalysisNote:$('#quality-analysis-note'),
     usageAuthRequired:$('#usage-auth-required'),
     usageContent:$('#usage-content'),
     refreshUsage:$('#refresh-usage'),
@@ -864,6 +865,89 @@
     return cases;
   }
 
+  function qualityCandidateSourceMatches(testCase,candidate){
+    const expected=normalizeQualityText(testCase?.expectedSourceContains||testCase?.document||'');
+    const actual=normalizeQualityText(candidate?.title||candidate?.fileName||'');
+    return Boolean(expected) && Boolean(actual) && actual.includes(expected);
+  }
+
+  function classifyQualityFailure(testCase,result,errorMessage=''){
+    if(errorMessage){
+      return {
+        failureClass:'api_auth',
+        failureLabel:'API・認証/通信',
+        recommendation:'認証状態・Worker応答・ネットワークを確認し、品質判定は再実行してください。'
+      };
+    }
+
+    const expectedMode=String(testCase?.expectedMode||'answer');
+    const status=String(result?.status||'');
+    const aiCalled=Boolean(result?.aiCalled);
+    const sources=Array.isArray(result?.sources)?result.sources:[];
+    const candidates=Array.isArray(result?.retrieval?.diagnostics?.fusedCandidates)
+      ? result.retrieval.diagnostics.fusedCandidates
+      : [];
+
+    if(expectedMode==='insufficient'){
+      if(status==='answer' || sources.length){
+        return {
+          failureClass:'negative_answered',
+          failureLabel:'根拠なし誤回答',
+          recommendation:'最優先確認。誤って採用された根拠候補と質問の語句重複を確認してください。'
+        };
+      }
+      if(aiCalled){
+        return {
+          failureClass:'gate_overpass',
+          failureLabel:'Evidence Gate',
+          recommendation:'最終回答は拒否できていますがAIまで到達しています。採用候補とGate理由を確認してください。'
+        };
+      }
+      return {failureClass:'',failureLabel:'',recommendation:''};
+    }
+
+    if(status==='answer'){
+      const expected=normalizeQualityText(testCase?.expectedSourceContains||'');
+      const sourceOk=Boolean(expected) && sources.some(src=>
+        normalizeQualityText(src?.title||src?.fileName||'').includes(expected)
+      );
+      if(!sourceOk){
+        return {
+          failureClass:'wrong_source',
+          failureLabel:'根拠資料違い',
+          recommendation:'重複資料・旧版・似た表現を確認し、想定資料がcurrent/active/approvedか確認してください。'
+        };
+      }
+      return {failureClass:'',failureLabel:'',recommendation:''};
+    }
+
+    const expectedCandidates=candidates.filter(candidate=>
+      qualityCandidateSourceMatches(testCase,candidate)
+    );
+    const acceptedExpected=expectedCandidates.filter(candidate=>Boolean(candidate?.accepted));
+
+    if(aiCalled || acceptedExpected.length){
+      return {
+        failureClass:'ai_content',
+        failureLabel:'AI・資料内容',
+        recommendation:'根拠は採用されています。該当見出しに質問へ直接答える具体的記述があるか確認してください。'
+      };
+    }
+
+    if(expectedCandidates.length){
+      return {
+        failureClass:'gate',
+        failureLabel:'Evidence Gate',
+        recommendation:'想定資料は検索候補です。vector/FTS順位・gateReasonを確認し、Gateを緩める前に見出しと本文を改善してください。'
+      };
+    }
+
+    return {
+      failureClass:'retrieval',
+      failureLabel:'検索未到達',
+      recommendation:'想定資料が上位候補にありません。登録状態、見出し、質問語との表現差、旧版・検索対象を確認してください。'
+    };
+  }
   function scoreQualityCase(testCase,result,errorMessage=''){
     if(errorMessage){
       return {
@@ -878,7 +962,11 @@
         autoPassed:false,
         autoJudge:'FAIL',
         reviewRequired:false,
-        detail:'API実行エラー'
+        detail:'API実行エラー',
+        failureClass:'api_auth',
+        failureLabel:'API・認証/通信',
+        recommendation:'認証状態・Worker応答・ネットワークを確認し、品質判定は再実行してください。',
+        retrievalSummary:null
       };
     }
 
@@ -913,6 +1001,21 @@
           : '回答状態を確認してください';
     }
 
+    const failure=autoPassed
+      ? {failureClass:'',failureLabel:'',recommendation:''}
+      : classifyQualityFailure(testCase,result,'');
+
+    const fusedCandidates=Array.isArray(result?.retrieval?.diagnostics?.fusedCandidates)
+      ? result.retrieval.diagnostics.fusedCandidates
+      : [];
+    const retrievalSummary={
+      acceptedCount:Number(result?.retrieval?.diagnostics?.gate?.acceptedCount||0),
+      expectedCandidateCount:fusedCandidates.filter(candidate=>qualityCandidateSourceMatches(testCase,candidate)).length,
+      expectedAcceptedCount:fusedCandidates.filter(candidate=>
+        qualityCandidateSourceMatches(testCase,candidate) && candidate?.accepted
+      ).length
+    };
+
     return {
       testId:testCase.id,
       status:String(result?.status||''),
@@ -926,7 +1029,11 @@
       autoPassed,
       autoJudge:autoPassed?'PASS候補':'FAIL',
       reviewRequired:autoPassed && expectedMode==='answer',
-      detail
+      detail,
+      failureClass:failure.failureClass,
+      failureLabel:failure.failureLabel,
+      recommendation:failure.recommendation,
+      retrievalSummary
     };
   }
 
@@ -936,7 +1043,7 @@
     const results=new Map((state.quality.results||[]).map(item=>[Number(item.testId),item]));
 
     if(!cases.length){
-      nodes.qualityBody.innerHTML='<tr><td colspan="7">テストセットを読み込んでいます。</td></tr>';
+      nodes.qualityBody.innerHTML='<tr><td colspan="8">テストセットを読み込んでいます。</td></tr>';
       return;
     }
 
@@ -964,6 +1071,7 @@
           <td>${escapeHtml(resultText)}</td>
           <td>${escapeHtml(sourceText)}</td>
           <td><span class="panel-badge ${judgeClass}">${escapeHtml(judge)}</span></td>
+          <td>${r?.failureLabel ? '<span class="quality-cause-pill">'+escapeHtml(r.failureLabel)+'</span>' : '—'}</td>
         </tr>
       `;
     }).join('');
@@ -976,6 +1084,42 @@
     setText('quality-pass',passed);
     setText('quality-fail',failed);
     setText('quality-review',review);
+
+    const causeCounts={retrieval:0,gate:0,ai_content:0,wrong_source:0,negative_answered:0,api_auth:0};
+    for(const result of state.quality.results){
+      if(result?.failureClass && Object.prototype.hasOwnProperty.call(causeCounts,result.failureClass)){
+        causeCounts[result.failureClass]++;
+      }
+      if(result?.failureClass==='gate_overpass') causeCounts.gate++;
+    }
+    setText('quality-cause-retrieval',causeCounts.retrieval);
+    setText('quality-cause-gate',causeCounts.gate);
+    setText('quality-cause-ai',causeCounts.ai_content);
+    setText('quality-cause-source',causeCounts.wrong_source);
+    setText('quality-cause-negative',causeCounts.negative_answered);
+    setText('quality-cause-api',causeCounts.api_auth);
+
+    if(nodes.qualityAnalysisNote){
+      if(!completed){
+        nodes.qualityAnalysisNote.textContent='50問テスト完了後、FAIL原因と優先対応をここに表示します。';
+      }else if(causeCounts.api_auth){
+        nodes.qualityAnalysisNote.textContent='API・認証/通信エラーを先に解消してください。この実行結果は品質基準として確定しません。';
+      }else if(causeCounts.negative_answered){
+        nodes.qualityAnalysisNote.textContent='根拠なし質問への誤回答があります。最優先で該当行を確認してください。';
+      }else if(failed){
+        const pairs=[
+          ['検索未到達',causeCounts.retrieval],
+          ['Evidence Gate',causeCounts.gate],
+          ['AI・資料内容',causeCounts.ai_content],
+          ['根拠資料違い',causeCounts.wrong_source]
+        ].filter(([,count])=>count>0).sort((a,b)=>b[1]-a[1]);
+        nodes.qualityAnalysisNote.textContent=pairs.length
+          ? '主なFAIL原因：'+pairs.map(([label,count])=>label+' '+count+'件').join(' / ')+'。件数の多い原因から直します。'
+          : 'FAIL行の詳細を確認してください。';
+      }else{
+        nodes.qualityAnalysisNote.textContent='自動条件はすべてクリアしています。回答本文を管理者が確認してください。';
+      }
+    }
 
     if(nodes.qualityProgress && !state.quality.running){
       nodes.qualityProgress.textContent=completed===0?'未実施':(completed===cases.length?'完了':completed+'/'+cases.length);
@@ -1000,7 +1144,12 @@
         completed:results.length,
         autoPassCandidates:results.filter(r=>r.autoPassed).length,
         failed:results.filter(r=>!r.autoPassed).length,
-        semanticReviewRequired:results.filter(r=>r.reviewRequired).length
+        semanticReviewRequired:results.filter(r=>r.reviewRequired).length,
+        failureBreakdown:results.reduce((acc,r)=>{
+          const key=String(r?.failureClass||'');
+          if(key) acc[key]=(acc[key]||0)+1;
+          return acc;
+        },{})
       },
       note:'自動PASS候補は構造・根拠・Evidence Gateの機械判定です。回答本文の意味的正確性は管理者確認が必要です。',
       rows
@@ -1168,7 +1317,7 @@
     const report=state.quality.lastReport||buildQualityReport();
     const header=[
       'No','資料No','資料','種別','質問','想定見出し','期待モード',
-      '結果status','回答','根拠資料','AI呼出','provider','自動判定','本文確認必要','詳細','latencyMs'
+      '結果status','回答','根拠資料','AI呼出','provider','自動判定','原因分類','推奨対応','本文確認必要','詳細','latencyMs'
     ];
     const lines=[header.map(qualityCsvCell).join(',')];
     for(const row of report.rows){
@@ -1176,8 +1325,8 @@
       lines.push([
         row.id,row.documentNo,row.document,row.kind,row.question,row.expectedHeading,row.expectedMode,
         r.status||'',r.answer||'',Array.isArray(r.sourceNames)?r.sourceNames.join(' / '):'',
-        r.aiCalled?'yes':'no',r.provider||'',r.autoJudge||'未実施',r.reviewRequired?'yes':'no',
-        r.detail||'',r.latencyMs||''
+        r.aiCalled?'yes':'no',r.provider||'',r.autoJudge||'未実施',r.failureLabel||'',r.recommendation||'',
+        r.reviewRequired?'yes':'no',r.detail||'',r.latencyMs||''
       ].map(qualityCsvCell).join(','));
     }
     const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
