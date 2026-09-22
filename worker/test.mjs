@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import worker, { validatePayload, buildMessages, pickCorsOrigin } from './worker.mjs';
-import { applyEvidenceGate, buildEvidence } from './rag-retrieval.mjs';
+import { applyEvidenceGate, buildEvidence, buildFtsQuery } from './rag-retrieval.mjs';
 import { ensureOperationalSchema } from './usage-telemetry.mjs';
 import { embedWithGemini, isRetryableEmbeddingStatus } from './embedding-gemini.mjs';
 
@@ -36,7 +36,49 @@ let res=await worker.fetch(new Request('https://x/health'),{});
 eq(res.status,200);
 let health=await res.json();
 eq(health.ok,true);
-eq(health.version,'6.9.4');
+eq(health.version,'6.9.5');
+
+// STEP8-11: FTS alias expansion for common school-office paraphrases.
+{
+  const q1=buildFtsQuery('出張が終わったあと、報告は誰に出せばいいですか？');
+  ok(q1.includes('復命書'));
+  const q2=buildFtsQuery('勤務の途中で帰らなければならないときは、どんな手続が必要ですか？');
+  ok(q2.includes('早退'));
+}
+
+// STEP8-11: Vector#1 + FTS#1 is accepted at 0.70+, while weaker evidence remains blocked.
+{
+  const accepted=applyEvidenceGate([
+    {
+      chunkId:'c-top1-strong',
+      documentId:'doc-top1',
+      authoritative:true,
+      vectorRank:1,
+      vectorScore:0.7192,
+      ftsRank:1,
+      ftsScore:-0.001,
+      rrfScore:0.03279,
+      fusedRank:1
+    }
+  ]);
+  eq(accepted[0].accepted,true);
+  eq(accepted[0].gateReason,'top1_hybrid_agreement');
+
+  const rejected=applyEvidenceGate([
+    {
+      chunkId:'c-top1-weak',
+      documentId:'doc-top1-weak',
+      authoritative:true,
+      vectorRank:1,
+      vectorScore:0.6999,
+      ftsRank:1,
+      ftsScore:-0.001,
+      rrfScore:0.03279,
+      fusedRank:1
+    }
+  ]);
+  eq(rejected[0].accepted,false);
+}
 
 // STEP6 operational schema: runtime must verify migrated tables without executing DDL.
 {
