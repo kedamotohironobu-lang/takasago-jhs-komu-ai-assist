@@ -28,6 +28,9 @@ const RAG_CONFIG = Object.freeze({
       hybridMinVectorScore: 0.75,
       hybridMaxVectorRank: 3,
       hybridMaxFtsRank: 3,
+      // STEP8-11: Vector/FTSの両方が1位の場合だけ、実校テストで確認した
+      // 0.70以上を補助採用する。全体のhybrid閾値0.75は維持する。
+      top1HybridMinVectorScore: 0.70,
       // 実校データ校正: 同一資料内で複数チャンクがVector + FTSの両方で
       // 上位一致した場合のみ、0.65以上を補助的に採用する。
       corroboratedHybridMinVectorScore: 0.65,
