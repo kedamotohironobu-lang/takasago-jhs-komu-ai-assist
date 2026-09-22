@@ -6,7 +6,7 @@
   <meta name="description" content="高砂市立高砂中学校 校務AIアシスト 管理者ダッシュボード">
   <meta name="theme-color" content="#0d5b91">
   <title>校務AIアシスト ダッシュボード | 高砂市立高砂中学校</title>
-  <link rel="stylesheet" href="admin.css?v=step8-8a">
+  <link rel="stylesheet" href="admin.css?v=step8-10-gate1">
 </head>
 <body>
   <div class="admin-shell">
@@ -544,6 +544,38 @@
           <article class="panel wide">
             <div class="panel-head">
               <div>
+                <h3>STEP8-10 Evidence Gate詳細診断</h3>
+                <p class="panel-description">Evidence GateでFAILになった質問だけを、Vector順位・スコア、FTS順位、RRF、gateReasonで確認します。ここでは閾値を自動変更しません。</p>
+              </div>
+              <span class="panel-badge accent">STEP8-10</span>
+            </div>
+            <div class="quality-analysis-note" id="quality-gate-note">
+              50問テスト完了後、Evidence GateのFAIL詳細を表示します。
+            </div>
+            <div class="table-wrap quality-gate-table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>No.</th>
+                    <th>質問</th>
+                    <th>想定資料</th>
+                    <th>Vector</th>
+                    <th>FTS</th>
+                    <th>RRF</th>
+                    <th>gateReason</th>
+                    <th>診断</th>
+                  </tr>
+                </thead>
+                <tbody id="quality-gate-body">
+                  <tr><td colspan="8">まだ診断結果はありません。</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
                 <h3>50問の結果</h3>
                 <p class="panel-description">PASS候補でも回答本文は管理者が確認してください。FAIL時はEvidence Gateを緩めず、資料・見出し・版・チャンク・検索対象を先に確認します。</p>
               </div>
@@ -1066,6 +1098,6 @@
 
   <div class="admin-toast" id="admin-toast" hidden></div>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="admin.js?v=step8-9-retry1" defer></script>
+  <script src="admin.js?v=step8-10-gate1" defer></script>
 </body>
 </html>
