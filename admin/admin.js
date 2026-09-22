@@ -103,6 +103,8 @@
     qualityProgress:$('#quality-progress'),
     qualityProgressText:$('#quality-progress-text'),
     qualityAnalysisNote:$('#quality-analysis-note'),
+    qualityGateNote:$('#quality-gate-note'),
+    qualityGateBody:$('#quality-gate-body'),
     usageAuthRequired:$('#usage-auth-required'),
     usageContent:$('#usage-content'),
     refreshUsage:$('#refresh-usage'),
@@ -1008,12 +1010,26 @@
     const fusedCandidates=Array.isArray(result?.retrieval?.diagnostics?.fusedCandidates)
       ? result.retrieval.diagnostics.fusedCandidates
       : [];
+    const expectedCandidates=fusedCandidates
+      .filter(candidate=>qualityCandidateSourceMatches(testCase,candidate))
+      .map(candidate=>({
+        fusedRank:Number(candidate?.fusedRank||0),
+        chunkNo:candidate?.chunkNo==null?null:Number(candidate.chunkNo),
+        vectorRank:candidate?.vectorRank==null?null:Number(candidate.vectorRank),
+        vectorScore:candidate?.vectorScore==null?null:Number(candidate.vectorScore),
+        ftsRank:candidate?.ftsRank==null?null:Number(candidate.ftsRank),
+        ftsScore:candidate?.ftsScore==null?null:Number(candidate.ftsScore),
+        rrfScore:Number(candidate?.rrfScore||0),
+        accepted:Boolean(candidate?.accepted),
+        gateReason:String(candidate?.gateReason||''),
+        title:String(candidate?.title||''),
+        documentId:String(candidate?.documentId||'')
+      }));
     const retrievalSummary={
       acceptedCount:Number(result?.retrieval?.diagnostics?.gate?.acceptedCount||0),
-      expectedCandidateCount:fusedCandidates.filter(candidate=>qualityCandidateSourceMatches(testCase,candidate)).length,
-      expectedAcceptedCount:fusedCandidates.filter(candidate=>
-        qualityCandidateSourceMatches(testCase,candidate) && candidate?.accepted
-      ).length
+      expectedCandidateCount:expectedCandidates.length,
+      expectedAcceptedCount:expectedCandidates.filter(candidate=>candidate.accepted).length,
+      thresholds:result?.retrieval?.diagnostics?.gate?.thresholds||null
     };
 
     return {
@@ -1033,8 +1049,107 @@
       failureClass:failure.failureClass,
       failureLabel:failure.failureLabel,
       recommendation:failure.recommendation,
-      retrievalSummary
+      retrievalSummary,
+      expectedCandidates
     };
+  }
+
+  function formatQualityScore(value,digits=4){
+    if(value==null || !Number.isFinite(Number(value))) return '—';
+    return Number(value).toFixed(digits);
+  }
+
+  function diagnoseGateCandidate(candidate){
+    if(!candidate) return '候補なし';
+    const vectorRank=Number(candidate?.vectorRank||0);
+    const vectorScore=Number(candidate?.vectorScore||0);
+    const ftsRank=Number(candidate?.ftsRank||0);
+    const reason=String(candidate?.gateReason||'');
+
+    if(reason==='vector_only_below_threshold'){
+      return 'FTS一致なし。見出し・本文に質問語を明記';
+    }
+    if(reason==='fts_only_not_sufficient'){
+      return 'Vector一致なし。本文を質問に直接答える表現へ';
+    }
+    if(reason==='below_threshold'){
+      if(vectorRank && ftsRank){
+        return vectorScore>=0.65
+          ? 'Hybrid一致はあるが補強条件不足。関連チャンクを2件以上明確化'
+          : 'Hybrid一致だがVectorスコア不足。見出しと本文を具体化';
+      }
+      return '採用閾値未達。資料本文を先に改善';
+    }
+    if(reason==='not_authoritative' || reason.includes('inactive') || reason.includes('current')){
+      return '資料状態を確認';
+    }
+    return reason ? 'gateReasonを確認' : '候補詳細を確認';
+  }
+
+  function renderQualityGateDiagnostics(){
+    if(!nodes.qualityGateBody) return;
+    const casesById=new Map((state.quality.cases||[]).map(item=>[Number(item.id),item]));
+    const rows=(state.quality.results||[])
+      .filter(result=>result?.failureClass==='gate' || result?.failureClass==='gate_overpass');
+
+    if(!rows.length){
+      nodes.qualityGateBody.innerHTML='<tr><td colspan="8">Evidence GateのFAILはありません。</td></tr>';
+      if(nodes.qualityGateNote){
+        nodes.qualityGateNote.textContent=
+          state.quality.results.length
+            ? 'Evidence GateのFAILは0件です。'
+            : '50問テスト完了後、Evidence GateのFAIL詳細を表示します。';
+      }
+      return;
+    }
+
+    nodes.qualityGateBody.innerHTML=rows.map(result=>{
+      const testCase=casesById.get(Number(result.testId))||{};
+      const candidates=Array.isArray(result.expectedCandidates)?result.expectedCandidates:[];
+      const best=candidates
+        .slice()
+        .sort((a,b)=>
+          Number(a.fusedRank||999)-Number(b.fusedRank||999) ||
+          Number(b.vectorScore||0)-Number(a.vectorScore||0)
+        )[0]||null;
+      const vectorText=best
+        ? ('#'+(best.vectorRank||'—')+' / '+formatQualityScore(best.vectorScore))
+        : '—';
+      const ftsText=best
+        ? ('#'+(best.ftsRank||'—'))
+        : '—';
+      return `
+        <tr>
+          <td>${Number(result.testId)}</td>
+          <td>${escapeHtml(testCase.question||'')}</td>
+          <td>${escapeHtml(testCase.document||'')}</td>
+          <td>${escapeHtml(vectorText)}</td>
+          <td>${escapeHtml(ftsText)}</td>
+          <td>${escapeHtml(best?formatQualityScore(best.rrfScore,5):'—')}</td>
+          <td><code>${escapeHtml(best?.gateReason||'候補なし')}</code></td>
+          <td>${escapeHtml(diagnoseGateCandidate(best))}</td>
+        </tr>
+      `;
+    }).join('');
+
+    if(nodes.qualityGateNote){
+      const allCandidates=rows.flatMap(result=>
+        Array.isArray(result.expectedCandidates)?result.expectedCandidates:[]
+      );
+      const reasons={};
+      for(const candidate of allCandidates){
+        const key=String(candidate?.gateReason||'unknown');
+        reasons[key]=(reasons[key]||0)+1;
+      }
+      const topReasons=Object.entries(reasons)
+        .sort((a,b)=>b[1]-a[1])
+        .slice(0,4)
+        .map(([reason,count])=>reason+' '+count+'件')
+        .join(' / ');
+      nodes.qualityGateNote.textContent=
+        'Evidence Gate FAIL '+rows.length+'件。主なgateReason: '+(topReasons||'候補なし')+
+        '。この結果を見てから閾値変更の要否を判断します。';
+    }
   }
 
   function renderQualityResults(){
@@ -1098,6 +1213,7 @@
     setText('quality-cause-source',causeCounts.wrong_source);
     setText('quality-cause-negative',causeCounts.negative_answered);
     setText('quality-cause-api',causeCounts.api_auth);
+    renderQualityGateDiagnostics();
 
     if(nodes.qualityAnalysisNote){
       if(!completed){
@@ -1351,7 +1467,7 @@
     const report=state.quality.lastReport||buildQualityReport();
     const header=[
       'No','資料No','資料','種別','質問','想定見出し','期待モード',
-      '結果status','回答','根拠資料','AI呼出','provider','自動判定','原因分類','推奨対応','再試行回数','本文確認必要','詳細','latencyMs'
+      '結果status','回答','根拠資料','AI呼出','provider','自動判定','原因分類','推奨対応','最良Vector順位','最良VectorScore','最良FTS順位','最良RRF','gateReason','再試行回数','本文確認必要','詳細','latencyMs'
     ];
     const lines=[header.map(qualityCsvCell).join(',')];
     for(const row of report.rows){
@@ -1359,8 +1475,13 @@
       lines.push([
         row.id,row.documentNo,row.document,row.kind,row.question,row.expectedHeading,row.expectedMode,
         r.status||'',r.answer||'',Array.isArray(r.sourceNames)?r.sourceNames.join(' / '):'',
-        r.aiCalled?'yes':'no',r.provider||'',r.autoJudge||'未実施',r.failureLabel||'',r.recommendation||'',Number(r.retryAttempts||0),
-        r.reviewRequired?'yes':'no',r.detail||'',r.latencyMs||''
+        r.aiCalled?'yes':'no',r.provider||'',r.autoJudge||'未実施',r.failureLabel||'',r.recommendation||'',
+        (Array.isArray(r.expectedCandidates)&&r.expectedCandidates[0]?.vectorRank)||'',
+        (Array.isArray(r.expectedCandidates)&&r.expectedCandidates[0]?.vectorScore)||'',
+        (Array.isArray(r.expectedCandidates)&&r.expectedCandidates[0]?.ftsRank)||'',
+        (Array.isArray(r.expectedCandidates)&&r.expectedCandidates[0]?.rrfScore)||'',
+        (Array.isArray(r.expectedCandidates)&&r.expectedCandidates[0]?.gateReason)||'',
+        Number(r.retryAttempts||0),r.reviewRequired?'yes':'no',r.detail||'',r.latencyMs||''
       ].map(qualityCsvCell).join(','));
     }
     const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
