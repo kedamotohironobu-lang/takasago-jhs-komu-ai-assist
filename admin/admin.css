@@ -870,3 +870,6 @@ button{cursor:pointer}
 .quality-cause-pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#fff0dd;color:#8d5c10;font-size:11px;font-weight:900}
 @media(max-width:1100px){.quality-cause-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:650px){.quality-cause-grid{grid-template-columns:1fr 1fr}}
+
+.quality-gate-table-wrap{margin-top:12px}
+.quality-gate-table-wrap code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;color:#7a4f0c;background:#fff3dd;padding:3px 6px;border-radius:7px}
