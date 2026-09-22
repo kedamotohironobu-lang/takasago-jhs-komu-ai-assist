@@ -32,8 +32,50 @@ function unique(items) {
   return [...new Set(items)];
 }
 
+function expandFtsAliases(input) {
+  const source = cleanQuery(input, 500);
+  const aliases = [];
+  const add = (...items) => {
+    for (const item of items) {
+      const value = String(item || '').trim();
+      if (value && !aliases.includes(value)) aliases.push(value);
+    }
+  };
+
+  // 行政・校務FAQで頻出する言い換えだけをFTS補助語として追加する。
+  // Vector検索は元質問、Evidence Gateも維持するので、語彙展開だけで回答は通らない。
+  if (/(出張|旅行).*(終わ|終了).*(報告|誰に出)|報告.*(誰に|提出|出す)/.test(source)) {
+    add('復命書', '復命書 提出先', '出張後 復命');
+  }
+  if (/(勤務|仕事).*(途中|中).*(帰|退)|途中.*帰/.test(source)) {
+    add('早退', '早退する場合', '遅刻 早退');
+  }
+  if (/休日.*勤務/.test(source)) {
+    add('休日に勤務する場合', '休日勤務', '勤務時間外');
+  }
+  if (/決裁.*(順序|順番)|最終.*(誰|確認)/.test(source)) {
+    add('決裁の順序', '最終決裁者', '決裁');
+  }
+  if (/校務用?端末.*(家|自宅|持ち帰)|端末.*(家|自宅|持ち帰)/.test(source)) {
+    add('自宅での利用', '校外への持ち出し', '校務用端末');
+  }
+  if (/鍵.*(なく|無く|失く|紛失)/.test(source)) {
+    add('鍵を紛失した場合', '鍵 紛失');
+  }
+  if (/プロジェクター.*(借|貸)/.test(source)) {
+    add('プロジェクター等の貸出', 'ICT機器 貸出');
+  }
+  if (/勤務時間外.*(学校|校舎).*(入|利用)/.test(source)) {
+    add('勤務時間外に校舎へ入る場合', '校舎利用');
+  }
+
+  return aliases;
+}
+
 function buildFtsQuery(input) {
-  const q = cleanQuery(input, 500)
+  const original = cleanQuery(input, 500);
+  const aliases = expandFtsAliases(original);
+  const q = [original, ...aliases].join(' ')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -305,6 +347,12 @@ function applyEvidenceGate(candidates) {
       vectorRank <= gate.hybridMaxVectorRank &&
       ftsRank <= gate.hybridMaxFtsRank;
 
+    const top1HybridAccepted =
+      !hybridAccepted &&
+      vectorRank === 1 &&
+      ftsRank === 1 &&
+      vectorScore >= gate.top1HybridMinVectorScore;
+
     const corroboratedHybridAccepted =
       !hybridAccepted &&
       Boolean(item.documentId) &&
@@ -324,6 +372,7 @@ function applyEvidenceGate(candidates) {
 
     let gateReason = 'below_threshold';
     if (hybridAccepted) gateReason = 'hybrid_agreement';
+    else if (top1HybridAccepted) gateReason = 'top1_hybrid_agreement';
     else if (corroboratedHybridAccepted) gateReason = 'hybrid_multi_chunk_agreement';
     else if (vectorOnlyAccepted) gateReason = 'strong_vector_only';
     else if (!vectorRank && ftsRank) gateReason = 'fts_only_not_sufficient';
@@ -331,7 +380,7 @@ function applyEvidenceGate(candidates) {
 
     return {
       ...item,
-      accepted:hybridAccepted || corroboratedHybridAccepted || vectorOnlyAccepted,
+      accepted:hybridAccepted || top1HybridAccepted || corroboratedHybridAccepted || vectorOnlyAccepted,
       gateReason
     };
   });
@@ -489,6 +538,7 @@ async function hybridRetrieve(env, rawQuery, options = {}) {
 
 export {
   cleanQuery,
+  expandFtsAliases,
   buildFtsQuery,
   reciprocalRankFuse,
   applyEvidenceGate,
